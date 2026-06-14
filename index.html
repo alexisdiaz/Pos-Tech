@@ -1,0 +1,504 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Tech Inventario POS</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <section class="login" id="login">
+      <form class="card login-card" id="loginForm">
+        <h1>Tech Inventario POS</h1>
+        <p>Inventario, ventas, fotos y sincronizacion online/offline</p>
+        <label>Usuario<input id="loginUser" required autocomplete="username" /></label>
+        <label>Contrasena<input id="loginPass" required type="password" autocomplete="current-password" /></label>
+        <button>Entrar</button>
+        <small>Inicial sugerido: admin / admin123</small>
+      </form>
+    </section>
+
+    <div class="app hidden" id="app">
+      <aside>
+        <div class="brand">Tech POS</div>
+        <button data-view="dashboard" class="active">Dashboard</button>
+        <button data-view="sale">Venta</button>
+        <button data-view="products">Productos</button>
+        <button data-view="stock">Inventario</button>
+        <button data-view="ahorrosv" hidden>Zona Digital</button>
+        <button data-view="users">Usuarios</button>
+        <button data-view="reports">Reportes</button>
+      </aside>
+      <main>
+        <header>
+          <div><span id="roleText">Usuario</span><h1 id="title">Dashboard</h1><small id="syncStatus">Conectando...</small></div>
+          <button class="muted-btn" id="logoutBtn">Salir</button>
+        </header>
+
+        <section class="view active" id="dashboardView">
+          <div class="dashboard-screen">
+            <div class="dashboard-hero">
+              <div>
+                <h2>Dashboard</h2>
+                <p>Resumen general de tu tienda de tecnologia</p>
+              </div>
+              <div class="dashboard-actions">
+                <input id="dashboardStartDate" type="date" />
+                <input id="dashboardEndDate" type="date" />
+                <button type="button" id="dashboardFilterBtn">Filtrar</button>
+              </div>
+            </div>
+
+            <div class="dashboard-kpis">
+              <article><div class="dash-kpi-icon blue">$</div><div><span>Ventas totales</span><strong id="dashSold">$0.00</strong><small id="dashSalesTrend">0% vs periodo anterior</small></div></article>
+              <article><div class="dash-kpi-icon green">▱</div><div><span>Ordenes</span><strong id="dashTickets">0</strong><small id="dashOrdersTrend">0% vs periodo anterior</small></div></article>
+              <article><div class="dash-kpi-icon purple">□</div><div><span>Productos vendidos</span><strong id="dashUnitsSold">0</strong><small id="dashUnitsTrend">0% vs periodo anterior</small></div></article>
+              <article><div class="dash-kpi-icon orange">◌</div><div><span>Clientes</span><strong id="dashCustomers">0</strong><small id="dashCustomersTrend">Clientes registrados</small></div></article>
+              <article><div class="dash-kpi-icon cyan">▤</div><div><span>Ticket promedio</span><strong id="dashAverageTicket">$0.00</strong><small id="dashAverageTrend">0% vs periodo anterior</small></div></article>
+            </div>
+
+            <div class="dashboard-grid-main">
+              <section class="dashboard-card chart-wide">
+                <div class="dashboard-card-head"><h3>Ventas de los ultimos dias</h3><select id="dashboardMetric"><option value="sales">Ventas</option><option value="orders">Ordenes</option><option value="units">Productos</option></select></div>
+                <div id="salesLineChart" class="line-chart"></div>
+              </section>
+              <section class="dashboard-card">
+                <h3>Ventas por categoria</h3>
+                <div class="donut-layout"><div id="categoryDonut" class="donut-chart"></div><div id="categoryLegend" class="chart-legend"></div></div>
+              </section>
+              <section class="dashboard-card">
+                <div class="dashboard-card-head"><h3>Productos mas vendidos</h3></div>
+                <div id="topProductsDash" class="rank-list"></div>
+                <button type="button" class="text-link" id="dashProductsLink">Ver todos los productos →</button>
+              </section>
+            </div>
+
+            <div class="dashboard-grid-mid">
+              <section class="dashboard-card">
+                <h3>Estado del inventario</h3>
+                <div class="donut-layout"><div id="inventoryDonut" class="donut-chart"></div><div id="inventoryStatusList" class="chart-legend"></div></div>
+                <button type="button" class="text-link" id="dashInventoryLink">Ir a inventario</button>
+              </section>
+              <section class="dashboard-card">
+                <h3>Alertas y notificaciones</h3>
+                <div id="dashboardAlerts" class="alert-list"></div>
+              </section>
+              <section class="dashboard-card">
+                <h3>Ventas por metodo de pago</h3>
+                <div class="donut-layout"><div id="paymentDonut" class="donut-chart"></div><div id="paymentLegend" class="chart-legend"></div></div>
+              </section>
+            </div>
+
+            <div class="dashboard-grid-bottom">
+              <section class="dashboard-card chart-wide">
+                <h3>Ventas comparativas</h3>
+                <div id="comparisonBars" class="bar-chart"></div>
+              </section>
+              <section class="dashboard-card">
+                <h3>Actividad reciente</h3>
+                <div id="recentActivity" class="activity-list"></div>
+                <button type="button" class="text-link" id="dashReportsLink">Ver todas las actividades →</button>
+              </section>
+            </div>
+          </div>
+        </section>
+
+        <section class="view" id="saleView">
+          <div class="sale-screen">
+            <div class="sale-hero">
+              <div>
+                <h2>Venta</h2>
+                <p>Realiza ventas, agrega productos y procesa pagos.</p>
+              </div>
+              <div class="sale-top-search">
+                <input id="scanInput" placeholder="Buscar productos (SKU, nombre, codigo)..." />
+                <button id="scanBtn" title="Agregar por codigo">▥</button>
+              </div>
+            </div>
+
+            <div class="sale-layout">
+              <div class="sale-main">
+                <section class="sale-panel">
+                  <div class="sale-panel-head">
+                    <h3>Agregar productos</h3>
+                  </div>
+                  <div class="sale-tools">
+                    <div class="sale-search"><input id="saleCatalogSearch" placeholder="Buscar producto por nombre, SKU o codigo..." /><span>⌕</span></div>
+                    <select id="saleCategoryFilter"><option value="all">Categorias</option></select>
+                    <select id="saleStockFilter"><option value="all">Filtros</option><option value="available">Disponibles</option><option value="low">Stock bajo</option><option value="out">Sin stock</option></select>
+                  </div>
+                  <div class="sale-category-tabs" id="saleCategoryTabs"></div>
+                  <div class="sale-product-grid" id="productGrid"></div>
+                </section>
+
+                <section class="sale-panel">
+                  <div class="sale-panel-head">
+                    <h3>Productos en la venta (<span id="cartCount">0</span>)</h3>
+                  </div>
+                  <div class="sale-cart-table">
+                    <table>
+                      <thead><tr><th>Producto</th><th>Precio unit.</th><th>Cantidad</th><th>Descuento</th><th>Total</th><th></th></tr></thead>
+                      <tbody id="cartList"></tbody>
+                    </table>
+                  </div>
+                  <button type="button" class="danger-outline" id="clearCartBtn">Vaciar carrito</button>
+                </section>
+
+                <section class="sale-bottom-grid">
+                  <div class="sale-panel">
+                    <h3>Venta reciente</h3>
+                    <div class="recent-sales-mini" id="recentSalesMini"></div>
+                  </div>
+                  <div class="sale-panel">
+                    <h3>Acciones rapidas</h3>
+                    <button type="button" class="quick-sale-btn">Aplicar descuento <span>F2</span></button>
+                    <button type="button" class="quick-sale-btn">Agregar cliente <span>F3</span></button>
+                  </div>
+                </section>
+              </div>
+
+              <div class="sale-summary">
+                <section class="sale-panel">
+                  <h3>Resumen de venta</h3>
+                  <div class="summary-lines">
+                    <div><span>Subtotal</span><strong id="subtotal">$0.00</strong></div>
+                    <div><span>Impuestos (13%)</span><strong id="tax">$0.00</strong></div>
+                    <div class="hidden"><span>Costo</span><strong id="cost">$0.00</strong></div>
+                  </div>
+                  <div class="summary-total"><span>Total</span><strong id="total">$0.00</strong></div>
+                </section>
+
+                <section class="sale-panel">
+                  <h3>Metodo de pago</h3>
+                  <select id="paymentMethod"><option>Efectivo</option><option>Tarjeta</option><option>Transferencia</option></select>
+                  <label>Pagado con
+                    <input id="payment" type="number" min="0" step="0.01" placeholder="0.00" />
+                  </label>
+                  <div class="change-line"><span>Cambio</span><strong id="change">$0.00</strong></div>
+                </section>
+
+                <section class="sale-panel">
+                  <label>Cliente (opcional)
+                    <input id="saleCustomer" placeholder="Buscar cliente por nombre o telefono..." />
+                  </label>
+                  <label>Notas (opcional)
+                    <textarea id="saleNotes" placeholder="Agregar nota a la venta..."></textarea>
+                  </label>
+                  <label class="sale-proof">Foto de venta
+                    <input id="saleImageFile" type="file" accept="image/jpeg,image/png,image/webp" capture="environment" />
+                  </label>
+                  <img id="salePreview" class="preview sale-preview" alt="" />
+                  <button id="checkoutBtn">Procesar venta</button>
+                  <button type="button" class="quote-btn">Guardar como cotizacion</button>
+                </section>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="view" id="productsView">
+          <div class="products-screen">
+            <div class="products-hero">
+              <div>
+                <h2>Productos</h2>
+                <p>Administra tu catalogo de productos, categorias, marcas y precios.</p>
+              </div>
+              <div class="products-actions">
+                <div class="products-search"><input id="catalogSearch" placeholder="Buscar productos..." /><span>⌕</span></div>
+                <select id="productFilter">
+                  <option value="all">Filtros</option>
+                  <option value="low_stock">Stock bajo</option>
+                  <option value="less_stock">Menos inventario</option>
+                  <option value="more_stock">Mas inventario</option>
+                  <option value="best_sellers">Mas vendidos</option>
+                  <option value="no_image">Sin imagen</option>
+                </select>
+                <button type="button" id="catalogNewProductBtn">+ Nuevo producto</button>
+              </div>
+            </div>
+
+            <div class="products-kpis">
+              <article><div class="product-kpi-icon blue">◇</div><div><span>Total de productos</span><strong id="catalogTotalProducts">0</strong><small>Ver todos los productos →</small></div></article>
+              <article><div class="product-kpi-icon green">□</div><div><span>Productos activos</span><strong id="catalogActiveProducts">0</strong><small id="catalogActiveHint">0% del total</small></div></article>
+              <article><div class="product-kpi-icon amber">▱</div><div><span>Productos inactivos</span><strong id="catalogInactiveProducts">0</strong><small id="catalogInactiveHint">0% del total</small></div></article>
+              <article><div class="product-kpi-icon purple">▰</div><div><span>Categorias</span><strong id="catalogCategoryCount">0</strong><small>Ver categorias →</small></div></article>
+              <article><div class="product-kpi-icon cyan">☆</div><div><span>Marcas</span><strong id="catalogBrandCount">0</strong><small>Ver marcas →</small></div></article>
+            </div>
+
+            <div class="products-workspace">
+              <section class="products-list-panel">
+                <h3>Lista de productos</h3>
+                <div class="products-table-wrap">
+                  <table class="products-table">
+                    <thead><tr><th>Producto</th><th>Categoria</th><th>Marca</th><th>Precio</th><th>Stock</th><th>Estado</th><th>Acciones</th></tr></thead>
+                    <tbody id="catalogTable"></tbody>
+                  </table>
+                </div>
+                <div class="products-foot">
+                  <span id="catalogFootText">Mostrando 0 productos</span>
+                </div>
+              </section>
+
+              <aside class="product-detail-panel">
+                <h3>Detalle del producto</h3>
+                <div id="productDetail"></div>
+              </aside>
+            </div>
+          </div>
+        </section>
+
+        <section class="view" id="stockView">
+          <div class="inventory-screen">
+            <div class="inventory-hero">
+              <div>
+                <h2>Inventario</h2>
+                <p>Gestiona tus productos y existencias</p>
+              </div>
+              <div class="inventory-search">
+                <input id="inventorySearch" placeholder="Buscar productos..." />
+                <span>⌕</span>
+              </div>
+            </div>
+
+            <div class="inventory-kpis">
+              <article>
+                <div class="kpi-icon blue">▣</div>
+                <div><span>Total de productos</span><strong id="inventoryTotalProducts">0</strong><small id="inventoryTotalHint">Ver todos los productos</small></div>
+              </article>
+              <article>
+                <div class="kpi-icon green">▤</div>
+                <div><span>En stock</span><strong id="inventoryInStock">0</strong><small id="inventoryInStockHint">0% del total</small></div>
+              </article>
+              <article>
+                <div class="kpi-icon amber">▢</div>
+                <div><span>Stock bajo</span><strong id="inventoryLowCount">0</strong><small>Productos por reabastecer</small></div>
+              </article>
+              <article>
+                <div class="kpi-icon red">▥</div>
+                <div><span>Sin stock</span><strong id="inventoryOutCount">0</strong><small>Productos agotados</small></div>
+              </article>
+            </div>
+
+            <div class="inventory-workspace">
+              <section class="inventory-list-panel">
+                <div class="inventory-list-head">
+                  <h3>Lista de productos</h3>
+                  <div>
+                    <button type="button" class="ghost-btn" id="newProductBtn">+ Nuevo producto</button>
+                    <button type="button" class="ghost-btn hidden" id="compareProductBtn">Zona Digital</button>
+                  </div>
+                </div>
+                <div class="inventory-table-wrap">
+                  <table class="inventory-table">
+                    <thead><tr><th>Producto</th><th>Categoria</th><th>Precio</th><th>Stock</th><th>Estado</th><th>Acciones</th></tr></thead>
+                    <tbody id="productsTable"></tbody>
+                  </table>
+                </div>
+                <div class="inventory-foot">
+                  <span id="inventoryFootText">Mostrando 0 productos</span>
+                  <span id="inventoryValueText">Valor del inventario $0.00</span>
+                </div>
+              </section>
+
+              <aside class="inventory-form-panel">
+                <h3>Agregar nuevo producto</h3>
+                <form class="product-form" id="productForm">
+                  <input type="hidden" id="productId" />
+                  <label>Nombre del producto
+                    <input id="name" placeholder="Ej. Memoria USB Kingston 64GB" required />
+                  </label>
+                  <label>SKU
+                    <input id="code" placeholder="Ej. USB-KIN-64" required />
+                  </label>
+                  <label>Categoria
+                    <select id="category" required>
+                      <option value="">Seleccionar categoria</option>
+                      <option>Memorias USB</option>
+                      <option>Memorias SD / TFlash</option>
+                      <option>Discos externos</option>
+                      <option>SSD / Discos internos</option>
+                      <option>Cables de carga</option>
+                      <option>Cables de video</option>
+                      <option>Cables de red</option>
+                      <option>Cargadores</option>
+                      <option>Adaptadores</option>
+                      <option>Audifonos</option>
+                      <option>Bocinas</option>
+                      <option>Mouse</option>
+                      <option>Teclados</option>
+                      <option>Monitores</option>
+                      <option>Laptops</option>
+                      <option>PC Desktop</option>
+                      <option>Routers / Red</option>
+                      <option>Camaras</option>
+                      <option>Protectores / Fundas</option>
+                      <option>Repuestos</option>
+                      <option>Otros</option>
+                    </select>
+                  </label>
+                  <div class="form-pair">
+                    <label>Precio de compra
+                      <input id="purchasePrice" type="number" step="0.01" placeholder="0.00" required />
+                    </label>
+                    <label>Precio de venta
+                      <input id="salePrice" type="number" step="0.01" placeholder="0.00" required />
+                    </label>
+                  </div>
+                  <label>Stock
+                    <input id="stock" type="number" min="0" placeholder="0" required />
+                  </label>
+                  <label>Descripcion
+                    <textarea id="description" placeholder="Descripcion del producto..."></textarea>
+                  </label>
+                  <input id="purchasePackPrice" type="hidden" />
+                  <input id="minStock" type="hidden" value="0" />
+                  <input id="unitName" type="hidden" value="unidad" />
+                  <input id="packName" type="hidden" value="unidad" />
+                  <input id="packSize" type="hidden" value="1" />
+                  <input id="packPrice" type="hidden" />
+                  <input id="expirationDate" type="hidden" />
+                  <label>Foto del producto
+                    <input id="imageFile" type="file" accept="image/jpeg,image/png,image/webp" capture="environment" />
+                  </label>
+                  <img id="preview" class="preview" alt="" />
+                  <button>Guardar producto</button>
+                </form>
+                <select id="stockProduct" class="hidden"></select>
+                <img id="stockProductImage" class="selected-product-image hidden" alt="Producto seleccionado" />
+                <div id="stockProductInfo" class="muted-info hidden"></div>
+              </aside>
+            </div>
+
+            <div class="inventory-values hidden">
+              <strong id="inventoryCost">$0.00</strong>
+              <strong id="inventoryRevenue">$0.00</strong>
+              <strong id="inventoryProfit">$0.00</strong>
+            </div>
+          </div>
+        </section>
+
+        <section class="view" id="usersView">
+          <div class="users-screen">
+            <div class="users-hero">
+              <div>
+                <h2>Usuarios</h2>
+                <p>Administra los usuarios y permisos del sistema.</p>
+              </div>
+            </div>
+            <div class="users-kpis">
+              <article><div class="user-kpi-icon green">☷</div><div><span>Total de usuarios</span><strong id="usersTotal">0</strong><small>Usuarios registrados</small></div></article>
+              <article><div class="user-kpi-icon teal">✓</div><div><span>Usuarios activos</span><strong id="usersActive">0</strong><small id="usersActiveHint">0% del total</small></div></article>
+              <article><div class="user-kpi-icon blue">◇</div><div><span>Roles definidos</span><strong>2</strong><small>Roles en el sistema</small></div></article>
+            </div>
+            <div class="users-workspace">
+              <section class="user-form-panel">
+                <h3>Crear usuario</h3>
+                <form id="userForm">
+                  <input type="hidden" id="userId" />
+                  <label>Nombre completo<input id="userName" placeholder="Ej. Juan Perez" required /></label>
+                  <label>Usuario<input id="username" placeholder="Ej. jperez" required /></label>
+                  <label>Contrasena<input id="password" type="password" placeholder="Ingrese la contrasena" /></label>
+                  <label>Rol<select id="userRole"><option>Administrador</option><option>Colaborador</option></select></label>
+                  <label class="inline-check user-active-check"><input id="userActive" type="checkbox" checked /> Usuario activo</label>
+                  <button type="submit">Guardar usuario</button>
+                </form>
+              </section>
+              <section class="users-list-panel">
+                <div class="users-list-head">
+                  <h3>Lista de usuarios</h3>
+                  <div class="users-tools">
+                    <input id="usersSearch" placeholder="Buscar usuario..." />
+                    <select id="usersRoleFilter"><option value="all">Filtros</option><option>Administrador</option><option>Colaborador</option></select>
+                  </div>
+                </div>
+                <div class="products-table-wrap">
+                  <table class="products-table users-table">
+                    <thead><tr><th>Usuario</th><th>Nombre</th><th>Rol</th><th>Estado</th><th>Ultimo acceso</th><th>Acciones</th></tr></thead>
+                    <tbody id="usersTable"></tbody>
+                  </table>
+                </div>
+                <div class="products-foot users-foot">
+                  <span id="usersFootText">Mostrando 0 usuarios</span>
+                  <div class="users-pages"><button type="button">‹</button><button type="button" class="active">1</button><button type="button">2</button><button type="button">3</button><button type="button">›</button></div>
+                </div>
+              </section>
+            </div>
+          </div>
+        </section>
+
+        <section class="view" id="reportsView">
+          <div class="reports-screen">
+            <div class="reports-hero">
+              <div>
+                <h2>Reportes</h2>
+                <p>Consulta y analiza el rendimiento de tu tienda.</p>
+              </div>
+              <div class="reports-actions">
+                <input id="reportStartDate" type="date" />
+                <input id="reportEndDate" type="date" />
+                <button class="muted-btn" id="generateReportBtn">Filtrar</button>
+                <button class="muted-btn" id="printReportBtn">Exportar</button>
+              </div>
+            </div>
+            <div class="reports-tabs">
+              <button class="active" type="button" data-report-tab="summary">Resumen</button>
+              <button type="button" data-report-tab="sales">Ventas</button>
+              <button type="button" data-report-tab="products">Productos</button>
+              <button type="button" data-report-tab="inventory">Inventario</button>
+              <button type="button" data-report-tab="clients">Clientes</button>
+              <button type="button" data-report-tab="payments">Pagos</button>
+            </div>
+            <div class="dashboard-kpis reports-kpis">
+              <article><div class="dash-kpi-icon blue">$</div><div><span>Ventas totales</span><strong id="reportSold">$0.00</strong><small id="reportSalesTrend">0% vs periodo anterior</small></div></article>
+              <article><div class="dash-kpi-icon green">▱</div><div><span>Ordenes</span><strong id="reportTickets">0</strong><small id="reportOrdersTrend">0% vs periodo anterior</small></div></article>
+              <article><div class="dash-kpi-icon purple">□</div><div><span>Productos vendidos</span><strong id="reportUnits">0</strong><small id="reportUnitsTrend">0% vs periodo anterior</small></div></article>
+              <article><div class="dash-kpi-icon orange">◌</div><div><span>Clientes</span><strong id="reportCustomers">0</strong><small>Usuarios registrados</small></div></article>
+              <article><div class="dash-kpi-icon cyan">▤</div><div><span>Ticket promedio</span><strong id="reportAverage">$0.00</strong><small id="reportAverageTrend">0% vs periodo anterior</small></div></article>
+            </div>
+            <div class="reports-layout">
+              <aside class="reports-filter-card">
+                <h3>Filtros</h3>
+                <label>Rango de fechas<input id="reportRangeLabel" readonly /></label>
+                <label>Comparar con<select id="reportCompare"><option value="previous">Periodo anterior</option><option value="none">Sin comparar</option></select></label>
+                <label>Cajero<select id="reportCashier"><option value="all">Todos</option></select></label>
+                <label>Categoria<select id="reportCategoryFilter"><option value="all">Todas</option></select></label>
+                <label>Metodo de pago<select id="reportPaymentFilter"><option value="all">Todos</option><option>Efectivo</option><option>Tarjeta</option><option>Transferencia</option></select></label>
+                <button type="button" class="muted-btn" id="clearReportFiltersBtn">Limpiar filtros</button>
+              </aside>
+              <div class="reports-content">
+                <div class="reports-grid-top">
+                  <section class="dashboard-card chart-wide"><div class="dashboard-card-head"><h3>Ventas por dia</h3><select id="reportMetric"><option value="sales">Ventas</option><option value="orders">Ordenes</option><option value="units">Productos</option></select></div><div id="reportLineChart" class="line-chart"></div></section>
+                  <section class="dashboard-card"><h3>Ventas por categoria</h3><div class="donut-layout"><div id="reportCategoryDonut" class="donut-chart"></div><div id="reportCategoryLegend" class="chart-legend"></div></div></section>
+                </div>
+                <div class="reports-grid-top">
+                  <section class="dashboard-card"><h3>Productos mas vendidos</h3><div class="products-table-wrap"><table class="products-table report-table"><thead><tr><th>#</th><th>Producto</th><th>Categoria</th><th>Cantidad vendida</th><th>Ventas totales</th></tr></thead><tbody id="reportTopProducts"></tbody></table></div><button type="button" class="text-link" id="reportProductsLink">Ver todos los productos →</button></section>
+                  <section class="dashboard-card"><h3>Ventas por metodo de pago</h3><div class="donut-layout"><div id="reportPaymentDonut" class="donut-chart"></div><div id="reportPaymentLegend" class="chart-legend"></div></div></section>
+                </div>
+                <div class="reports-grid-bottom">
+                  <section class="dashboard-card"><h3>Resumen de ventas</h3><div class="products-table-wrap"><table class="products-table report-table"><thead><tr><th>Metrica</th><th>Periodo actual</th><th>Periodo anterior</th><th>Variacion</th><th>Variacion (%)</th></tr></thead><tbody id="reportSummaryRows"></tbody></table></div></section>
+                  <section class="dashboard-card"><h3>Reporte de inventario (resumen)</h3><div class="report-inventory-kpis" id="reportInventoryKpis"></div><button type="button" class="text-link" id="reportInventoryLink">Ver reporte completo de inventario →</button></section>
+                </div>
+                <div class="card report-output hidden" id="reportOutput"></div>
+                <div class="card hidden"><div class="ticket-list" id="salesList"></div></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="view hidden" id="ahorrosvView">
+          <div class="card external-tool">
+            <div>
+              <h2>Zona Digital SV</h2>
+              <p class="muted-info">Catalogo externo para revisar articulos de tecnologia.</p>
+            </div>
+            <button class="button-link" id="reloadAhorroBtn" type="button">Recargar sitio</button>
+          </div>
+          <webview class="external-frame hidden" id="ahorroWebview" src="https://www.zonadigitalsv.com/" partition="persist:zonadigitalsv"></webview>
+          <iframe class="external-frame" id="ahorroFrame" src="about:blank" title="Zona Digital SV"></iframe>
+        </section>
+      </main>
+    </div>
+    <div class="toast" id="toast"></div>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
