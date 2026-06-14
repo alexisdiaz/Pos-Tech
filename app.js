@@ -128,7 +128,8 @@ const defaultView = () => allowedViews()[0] || "sale";
 const canManageProducts = () => isAdmin();
 const CACHE_KEY = "tech_pos_cache_v1";
 const QUEUE_KEY = "tech_pos_offline_queue_v1";
-const ONLINE_TIMEOUT_MS = 4500;
+const ONLINE_TIMEOUT_MS = 9000;
+const EMPTY_IMAGE = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 80 60'%3E%3Crect width='80' height='60' rx='8' fill='%23eef2f7'/%3E%3Cpath d='M20 42h40L49 30l-8 8-6-6-15 10Z' fill='%23cbd5e1'/%3E%3Ccircle cx='29' cy='25' r='5' fill='%23cbd5e1'/%3E%3C/svg%3E";
 let realtimeChannel = null;
 let refreshTimer = null;
 let refreshInFlight = false;
@@ -208,6 +209,38 @@ function withTimeout(promise, label, ms = ONLINE_TIMEOUT_MS) {
     Promise.resolve(promise),
     new Promise((_, reject) => setTimeout(() => reject(new Error(`${label} tardo demasiado`)), ms)),
   ]);
+}
+
+function safeImageUrl(url, fallback = EMPTY_IMAGE) {
+  const raw = String(url || "").trim();
+  if (!raw) return fallback;
+  if (raw.startsWith("data:image/") || raw.startsWith("blob:")) return raw;
+  try {
+    const parsed = new URL(raw, window.location.href);
+    const host = parsed.hostname.toLowerCase();
+    const isLoopback = host === "localhost" || host === "127.0.0.1" || host === "::1" || host.startsWith("127.");
+    if (isLoopback || parsed.protocol === "file:") return fallback;
+    if (window.location.protocol === "https:" && parsed.protocol !== "https:") return fallback;
+    return parsed.href;
+  } catch {
+    return fallback;
+  }
+}
+
+function profileFromSession(session) {
+  const metadata = session?.user?.user_metadata || {};
+  const email = session?.user?.email || "";
+  const username = metadata.username || email.split("@")[0] || "usuario";
+  const fallbackRole = username.toLowerCase() === "admin" || email.toLowerCase().startsWith("admin@")
+    ? "Administrador"
+    : "Colaborador";
+  return {
+    id: session?.user?.id,
+    name: metadata.name || username,
+    username,
+    role: normalizeRole(metadata.role || metadata.user_role || fallbackRole),
+    active: true,
+  };
 }
 
 function renderSyncStatus() {
@@ -346,7 +379,7 @@ function todaysProductSales() {
 function productRowHtml(product) {
   const name = product.product_name || product.name;
   const visual = product.image_url
-    ? `<img src="${product.image_url}" alt="${name}">`
+    ? `<img src="${safeImageUrl(product.image_url)}" alt="${name}">`
     : serviceImage(name.split(" - ")[0]);
   return `
     <div class="top-product">
@@ -413,7 +446,7 @@ function expirationText(product) {
 }
 
 function productThumb(product) {
-  return `<img class="thumb" src="${product?.image_url || ""}" alt="${product?.name || "Producto"}">`;
+  return `<img class="thumb" src="${safeImageUrl(product?.image_url)}" alt="${product?.name || "Producto"}">`;
 }
 
 function companyBadge(company) {
@@ -435,9 +468,22 @@ function saleItemVisual(item) {
   return productThumb(item.product);
 }
 
+function enterApp() {
+  $("login").classList.add("hidden");
+  $("app").classList.remove("hidden");
+  const today = new Date();
+  const start = addDays(today, -6);
+  if ($("reportStartDate") && !$("reportStartDate").value) $("reportStartDate").value = dateKey(start);
+  if ($("reportEndDate") && !$("reportEndDate").value) $("reportEndDate").value = dateKey(today);
+  if ($("dashboardStartDate") && !$("dashboardStartDate").value) $("dashboardStartDate").value = dateKey(start);
+  if ($("dashboardEndDate") && !$("dashboardEndDate").value) $("dashboardEndDate").value = dateKey(today);
+  renderAll();
+  renderSyncStatus();
+}
+
 async function bootstrap() {
   const cached = loadCache();
-  const { data } = await withTimeout(supabase.auth.getSession(), "Sesion", 2500).catch(() => ({ data: { session: null } }));
+  const { data } = await withTimeout(supabase.auth.getSession(), "Sesion", 6000).catch(() => ({ data: { session: null } }));
   state.session = data.session;
   if (!state.session) {
     $("login").classList.remove("hidden");
@@ -445,30 +491,33 @@ async function bootstrap() {
     return;
   }
 
+  if (cached?.user) {
+    applyCachedState(cached);
+    enterApp();
+  }
+
   try {
     state.user = await requireOk(await withTimeout(supabase.from("profiles").select("*").eq("id", state.session.user.id).single(), "Perfil"));
   } catch (err) {
-    if (!applyCachedState(cached)) throw err;
+    if (!applyCachedState(cached)) {
+      state.user = profileFromSession(state.session);
+      state.profiles = [state.user];
+      toast("Perfil tardó en cargar: usando la sesión local");
+    }
   }
   if (cached) applyCachedState({ ...cached, user: state.user || cached.user });
-  $("login").classList.add("hidden");
-  $("app").classList.remove("hidden");
-  const today = new Date();
-  const start = addDays(today, -6);
-  if ($("reportStartDate")) $("reportStartDate").value = dateKey(start);
-  if ($("reportEndDate")) $("reportEndDate").value = dateKey(today);
-  if ($("dashboardStartDate")) $("dashboardStartDate").value = dateKey(start);
-  if ($("dashboardEndDate")) $("dashboardEndDate").value = dateKey(today);
-  renderAll();
-  renderSyncStatus();
+  enterApp();
   if (!isOnline()) {
     toast("Sin internet: usando datos guardados");
     return;
   }
   setupRealtime();
   setupRefreshPulse();
-  await syncOfflineSales();
-  refresh().catch(err => console.warn("No se pudo sincronizar al iniciar", err));
+  syncOfflineSales().catch(err => console.warn("No se pudo sincronizar offline al iniciar", err));
+  refresh().catch(err => {
+    console.warn("No se pudo sincronizar al iniciar", err);
+    toast("Conexion lenta: mostrando datos guardados");
+  });
 }
 
 async function refresh() {
@@ -505,7 +554,10 @@ async function refresh() {
 
 async function loadReports() {
   const sales = await requireOk(await withTimeout(supabase.from("sales").select("*").order("created_at", { ascending: false }).limit(200), "Ventas"));
-  const items = await requireOk(await withTimeout(supabase.from("sale_items").select("*"), "Detalle de ventas"));
+  const saleIds = sales.map(sale => sale.id).filter(Boolean);
+  const items = saleIds.length
+    ? await requireOk(await withTimeout(supabase.from("sale_items").select("*").in("sale_id", saleIds), "Detalle de ventas"))
+    : [];
   const summary = sales.reduce((acc, sale) => {
     acc.tickets += 1;
     acc.sold += Number(sale.total);
@@ -518,7 +570,7 @@ async function loadReports() {
     const product = state.products.find(p => p.id === item.product_id);
     const row = topMap.get(item.product_name) || {
       product_name: item.product_name,
-      image_url: product?.image_url || "",
+      image_url: safeImageUrl(product?.image_url),
       units: 0,
       sold: 0,
       profit: 0,
@@ -1001,7 +1053,7 @@ function renderProducts() {
   if ($("productGrid")) {
     $("productGrid").innerHTML = saleProducts.map(product => `
       <article class="sale-product ${Number(product.stock || 0) <= 0 ? "disabled" : ""}" onclick="addCart('${product.id}', 'unit')">
-        <img src="${product.image_url || ""}" alt="${product.name}">
+        <img src="${safeImageUrl(product.image_url)}" alt="${product.name}">
         <div>
           <b>${product.name}</b>
           <span>SKU: ${product.code}</span>
@@ -1015,7 +1067,7 @@ function renderProducts() {
     const status = stockStatus(product);
     return `
     <tr class="${state.selectedProductId === product.id ? "selected" : ""}" onclick="selectCatalogProduct('${product.id}')">
-      <td><div class="table-product"><img class="thumb" src="${product.image_url || ""}" alt="${product.name}"><div><b>${product.name}</b><br><span>SKU: ${product.code}</span></div></div></td>
+      <td><div class="table-product"><img class="thumb" src="${safeImageUrl(product.image_url)}" alt="${product.name}"><div><b>${product.name}</b><br><span>SKU: ${product.code}</span></div></div></td>
       <td>${categoryShort(product.category)}</td>
       <td>${brandFromProduct(product)}</td>
       <td>${fmt(product.sale_price)}</td>
@@ -1031,7 +1083,7 @@ function renderProducts() {
     const status = stockStatus(product);
     return `
     <tr>
-      <td><div class="table-product"><img class="thumb" src="${product.image_url || ""}" alt="${product.name}"><div><b>${product.name}</b><br><span>SKU: ${product.code}</span></div></div></td>
+      <td><div class="table-product"><img class="thumb" src="${safeImageUrl(product.image_url)}" alt="${product.name}"><div><b>${product.name}</b><br><span>SKU: ${product.code}</span></div></div></td>
       <td>${categoryShort(product.category)}</td>
       <td>${fmt(product.sale_price)}</td>
       <td><b class="stock-number ${status.cls}">${product.stock}</b></td>
@@ -1089,7 +1141,7 @@ function renderProductDetail() {
   const status = stockStatus(product);
   $("productDetail").innerHTML = `
     <div class="detail-product-head">
-      <img src="${product.image_url || ""}" alt="${product.name}">
+      <img src="${safeImageUrl(product.image_url)}" alt="${product.name}">
       <div>
         <b>${product.name}</b>
         <span class="catalog-status ${product.active === false ? "inactive" : "active"}">${product.active === false ? "Inactivo" : "Activo"}</span>
@@ -1393,7 +1445,7 @@ function renderCart() {
     <tr>
       <td>
         <div class="cart-product">
-          <img src="${product?.image_url || ""}" alt="${item.product_name}">
+          <img src="${safeImageUrl(product?.image_url)}" alt="${item.product_name}">
           <div><b>${item.product_name}</b><span>SKU: ${product?.code || item.label}</span></div>
         </div>
       </td>
@@ -1475,7 +1527,7 @@ function saleCardHtml(sale) {
         <div><b>${sale.ticket}</b><span>${localDateTime(sale.created_at)} - ${profileName(sale.user_id)}</span></div>
         <strong>${fmt(sale.total)}</strong>
       </div>
-      ${sale.proof_image_url ? `<img class="sale-proof-img" src="${sale.proof_image_url}" alt="Foto de venta ${sale.ticket}">` : ""}
+      ${sale.proof_image_url ? `<img class="sale-proof-img" src="${safeImageUrl(sale.proof_image_url)}" alt="Foto de venta ${sale.ticket}">` : ""}
       <div class="ticket-items">
         ${items.map(item => `
           <div class="ticket-item">
@@ -1524,7 +1576,7 @@ async function productPayloadFromForm(forceLocalImage = false) {
   calculatePurchaseUnitPrice();
   if (!$("category").value) throw new Error("Selecciona una categoria del inventario");
   const file = $("imageFile").files[0];
-  let image_url = $("preview").src || null;
+  let image_url = safeImageUrl($("preview").src, "") || null;
   if (file) {
     image_url = forceLocalImage ? await readFileAsDataUrl(file) : await uploadImage(file);
   }
@@ -1594,7 +1646,7 @@ function renderSelectedStockProduct() {
     return;
   }
   $("stockProduct").value = product.id;
-  $("stockProductImage").src = product.image_url || "";
+  $("stockProductImage").src = safeImageUrl(product.image_url);
   $("stockProductInfo").innerHTML = `
     <p><b>${product.name}</b></p>
     <p>Codigo: ${product.code}</p>
@@ -1646,8 +1698,10 @@ function fillProductForm(product) {
   $("minStock").value = product.min_stock;
   $("expirationDate").value = product.expiration_date || "";
   if ($("description")) $("description").value = product.description || "";
-  $("preview").src = product.image_url || "";
-  $("preview").classList.toggle("show", !!product.image_url);
+  const previewUrl = safeImageUrl(product.image_url, "");
+  if (previewUrl) $("preview").src = previewUrl;
+  else $("preview").removeAttribute("src");
+  $("preview").classList.toggle("show", !!previewUrl);
 }
 
 function resetProductForm() {
@@ -2200,7 +2254,7 @@ function generateReport() {
 
   if ($("reportTopProducts")) $("reportTopProducts").innerHTML = topRows.map((item, index) => {
     const product = products.find(entry => entry.name === item.name);
-    return `<tr><td>${index + 1}</td><td><div class="table-product">${product?.image_url ? `<img class="thumb" src="${product.image_url}" alt="${item.name}">` : ""}<b>${item.name}</b></div></td><td>${categoryShort(product?.category || "Otros")}</td><td>${item.units}</td><td>${fmt(item.sold)}</td></tr>`;
+    return `<tr><td>${index + 1}</td><td><div class="table-product"><img class="thumb" src="${safeImageUrl(product?.image_url)}" alt="${item.name}"><b>${item.name}</b></div></td><td>${categoryShort(product?.category || "Otros")}</td><td>${item.units}</td><td>${fmt(item.sold)}</td></tr>`;
   }).join("") || `<tr><td colspan="5">Sin productos vendidos.</td></tr>`;
 
   const paymentRows = ["Efectivo", "Tarjeta", "Transferencia"].map(label => ({
@@ -2248,7 +2302,7 @@ function productSummaryForSales(saleIds) {
       const product = state.products.find(entry => entry.id === item.product_id);
       const row = map.get(item.product_name) || {
         name: item.product_name,
-        image_url: product?.image_url || "",
+        image_url: safeImageUrl(product?.image_url),
         units: 0,
         sold: 0,
         profit: 0,
@@ -2377,4 +2431,10 @@ window.addEventListener("online", async () => {
 });
 window.addEventListener("offline", renderSyncStatus);
 supabase.auth.onAuthStateChange((_event, session) => { state.session = session; });
-bootstrap();
+bootstrap().catch((err) => {
+  console.error("No se pudo iniciar la aplicacion", err);
+  renderSyncStatus();
+  $("login").classList.remove("hidden");
+  $("app").classList.add("hidden");
+  toast("No se pudo conectar. Revisa internet e intenta entrar de nuevo.");
+});
