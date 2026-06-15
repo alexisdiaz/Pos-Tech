@@ -1028,6 +1028,52 @@ function filteredProductCatalog(products, mode) {
   return list;
 }
 
+function productVisibility(product) {
+  return product.active === false
+    ? { label: "Oculto", cls: "hidden" }
+    : { label: "Activo", cls: "active" };
+}
+
+function populateProductFilters(prefix, products) {
+  const categorySelect = $(`${prefix}CategoryFilter`);
+  const brandSelect = $(`${prefix}BrandFilter`);
+  if (categorySelect) {
+    const current = categorySelect.value || "all";
+    const categories = [...new Set(products.map(product => categoryShort(product.category)).filter(Boolean))].sort();
+    categorySelect.innerHTML = `<option value="all">Categorias</option>` + categories.map(category => `<option value="${category}">${category}</option>`).join("");
+    categorySelect.value = categories.includes(current) ? current : "all";
+  }
+  if (brandSelect) {
+    const current = brandSelect.value || "all";
+    const brands = [...new Set(products.map(brandFromProduct).filter(Boolean))].sort();
+    brandSelect.innerHTML = `<option value="all">Marcas</option>` + brands.map(brand => `<option value="${brand}">${brand}</option>`).join("");
+    brandSelect.value = brands.includes(current) ? current : "all";
+  }
+}
+
+function filterProductsByControls(products, prefix) {
+  const category = $(`${prefix}CategoryFilter`)?.value || "all";
+  const brand = $(`${prefix}BrandFilter`)?.value || "all";
+  const status = $(`${prefix}StatusFilter`)?.value || "all";
+  const stock = $(`${prefix}StockFilter`)?.value || "all";
+  return products
+    .filter(product => category === "all" || categoryShort(product.category) === category)
+    .filter(product => brand === "all" || brandFromProduct(product) === brand)
+    .filter(product => {
+      if (status === "active") return product.active !== false;
+      if (status === "inactive") return product.active === false;
+      return true;
+    })
+    .filter(product => {
+      const value = Number(product.stock || 0);
+      const min = Number(product.min_stock || 0);
+      if (stock === "high") return value > min;
+      if (stock === "low") return value > 0 && value <= min;
+      if (stock === "out") return value <= 0;
+      return true;
+    });
+}
+
 function renderProducts() {
   const catalogTerm = ($("catalogSearch")?.value || "").trim().toLowerCase();
   const productMode = $("productFilter")?.value || "all";
@@ -1038,8 +1084,10 @@ function renderProducts() {
   const matches = (product, term) => !term || `${product.name} ${product.code} ${product.category} ${product.unit_name} ${product.pack_name}`.toLowerCase().includes(term);
   const visibleProducts = state.products || [];
   const activeSaleProducts = visibleProducts.filter(product => product.active !== false);
-  const catalogProducts = filteredProductCatalog(visibleProducts.filter(product => matches(product, catalogTerm)), productMode);
-  let inventoryProducts = visibleProducts.filter(product => matches(product, inventoryTerm));
+  populateProductFilters("catalog", visibleProducts);
+  populateProductFilters("inventory", visibleProducts);
+  const catalogProducts = filteredProductCatalog(filterProductsByControls(visibleProducts.filter(product => matches(product, catalogTerm)), "catalog"), productMode);
+  let inventoryProducts = filterProductsByControls(visibleProducts.filter(product => matches(product, inventoryTerm)), "inventory");
   if (inventoryAlertFilter === "out") inventoryProducts = inventoryProducts.filter(product => Number(product.stock || 0) <= 0);
   if (inventoryAlertFilter === "low") inventoryProducts = inventoryProducts.filter(product => Number(product.stock || 0) > 0 && Number(product.stock || 0) <= Number(product.min_stock || 0));
   const saleCategories = [...new Set(activeSaleProducts.map(product => categoryShort(product.category)).filter(Boolean))].sort();
@@ -1085,6 +1133,7 @@ function renderProducts() {
 
   $("catalogTable").innerHTML = catalogProducts.map(product => {
     const status = stockStatus(product);
+    const visibility = productVisibility(product);
     return `
     <tr class="${state.selectedProductId === product.id ? "selected" : ""}" onclick="selectCatalogProduct('${product.id}')">
       <td><div class="table-product"><img class="thumb" src="${safeImageUrl(product.image_url)}" alt="${product.name}"><div><b>${product.name}</b><br><span>SKU: ${product.code}</span></div></div></td>
@@ -1092,7 +1141,7 @@ function renderProducts() {
       <td>${brandFromProduct(product)}</td>
       <td>${fmt(product.sale_price)}</td>
       <td><b class="stock-number ${status.cls}">${product.stock}</b></td>
-      <td><span class="catalog-status ${product.active === false ? "inactive" : "active"}">${product.active === false ? "Inactivo" : "Activo"}</span></td>
+      <td><span class="catalog-status ${visibility.cls === "hidden" ? "inactive" : "active"}">${visibility.label}</span></td>
       <td><button class="catalog-icon-btn" onclick="event.stopPropagation(); editProduct('${product.id}')" title="Editar">✎</button> <button class="catalog-icon-btn ${product.active === false ? "" : "danger"}" onclick="event.stopPropagation(); toggleProductSaleVisibility('${product.id}')" title="${product.active === false ? "Mostrar en venta" : "Ocultar de venta"}">${product.active === false ? "+" : "-"}</button></td>
     </tr>`;
   }).join("") || `<tr><td colspan="7">No se encontraron productos</td></tr>`;
@@ -1101,13 +1150,14 @@ function renderProducts() {
 
   $("productsTable").innerHTML = inventoryProducts.map(product => {
     const status = stockStatus(product);
+    const inventoryState = product.active === false ? productVisibility(product) : status;
     return `
     <tr>
       <td><div class="table-product"><img class="thumb" src="${safeImageUrl(product.image_url)}" alt="${product.name}"><div><b>${product.name}</b><br><span>SKU: ${product.code}</span></div></div></td>
       <td>${categoryShort(product.category)}</td>
       <td>${fmt(product.sale_price)}</td>
       <td><b class="stock-number ${status.cls}">${product.stock}</b></td>
-      <td><span class="stock-status ${status.cls}">${status.label}</span></td>
+      <td><span class="stock-status ${inventoryState.cls}">${inventoryState.label}</span></td>
       <td><button class="icon-btn" onclick="editProduct('${product.id}')" title="Editar">✎</button> <button class="icon-btn danger" onclick="deleteProduct('${product.id}')" title="Eliminar">⌫</button></td>
     </tr>`;
   }).join("") || `<tr><td colspan="6">No se encontraron productos</td></tr>`;
@@ -1159,12 +1209,13 @@ function renderProductDetail() {
     return;
   }
   const status = stockStatus(product);
+  const visibility = productVisibility(product);
   $("productDetail").innerHTML = `
     <div class="detail-product-head">
       <img src="${safeImageUrl(product.image_url)}" alt="${product.name}">
       <div>
         <b>${product.name}</b>
-        <span class="catalog-status ${product.active === false ? "inactive" : "active"}">${product.active === false ? "Inactivo" : "Activo"}</span>
+        <span class="catalog-status ${visibility.cls === "hidden" ? "inactive" : "active"}">${visibility.label}</span>
         <p>SKU: ${product.code}</p>
       </div>
     </div>
@@ -1175,7 +1226,7 @@ function renderProductDetail() {
       <p><span>Precio</span><b>${fmt(product.sale_price)}</b></p>
       <p><span>Costo</span><b>${fmt(product.purchase_price)}</b></p>
       <p><span>Stock actual</span><b class="stock-number ${status.cls}">${product.stock} unidades</b></p>
-      <p><span>Estado</span><b>${product.active === false ? "Inactivo" : "Activo"}</b></p>
+      <p><span>Estado</span><b>${visibility.label}</b></p>
     </div>
     <div class="detail-description">
       <h4>Descripcion</h4>
@@ -1909,10 +1960,18 @@ document.addEventListener("keydown", (event) => {
 });
 listen("catalogSearch", "input", renderProducts);
 listen("productFilter", "change", renderProducts);
+listen("catalogCategoryFilter", "change", renderProducts);
+listen("catalogBrandFilter", "change", renderProducts);
+listen("catalogStatusFilter", "change", renderProducts);
+listen("catalogStockFilter", "change", renderProducts);
 listen("inventorySearch", "input", () => {
   inventoryAlertFilter = "all";
   renderProducts();
 });
+listen("inventoryCategoryFilter", "change", renderProducts);
+listen("inventoryBrandFilter", "change", renderProducts);
+listen("inventoryStatusFilter", "change", renderProducts);
+listen("inventoryStockFilter", "change", renderProducts);
 listen("usersSearch", "input", () => renderUsers());
 listen("usersRoleFilter", "change", () => renderUsers());
 listen("serviceCompanyFilter", "change", renderServices);
