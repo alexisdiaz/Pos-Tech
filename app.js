@@ -136,6 +136,8 @@ let refreshTimer = null;
 let refreshInFlight = false;
 let pollTimer = null;
 let ahorroInitialized = false;
+let inventoryAlertFilter = "all";
+let activeReportTab = "summary";
 
 const listen = (id, event, handler) => {
   const element = $(id);
@@ -357,6 +359,15 @@ function localDate(value) {
 
 function localDateTime(value) {
   return new Date(value).toLocaleString("es-SV");
+}
+
+function escapeHtml(value = "") {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 }
 
 function inventoryTotals() {
@@ -787,7 +798,6 @@ function applyRolePermissions() {
   document.querySelectorAll("aside button[data-view]").forEach((button) => {
     button.hidden = !canUseView(button.dataset.view);
   });
-  if ($("catalogNewProductBtn")) $("catalogNewProductBtn").hidden = !canManageProducts();
   if (!canUseView(currentView())) showView(defaultView());
 }
 
@@ -972,10 +982,10 @@ function renderDashboard() {
   if ($("paymentLegend")) $("paymentLegend").innerHTML = renderLegend(paymentRows, ["#2563eb", "#22c55e", "#6d42d9"], current.total, fmt);
 
   if ($("dashboardAlerts")) $("dashboardAlerts").innerHTML = [
-    { tone: "red", title: `${outStock.length} productos sin stock`, text: "Productos agotados.", action: "Ver productos", view: "products" },
-    { tone: "amber", title: `${lowStock.length} productos con stock bajo`, text: "Revisa y reabastece pronto.", action: "Ir a inventario", view: "stock" },
-    { tone: "blue", title: `${offlineQueue().length} cambios pendientes`, text: "Esperando sincronizacion.", action: "Ver reportes", view: "reports" },
-  ].map(alert => `<div class="${alert.tone}"><i></i><div><b>${alert.title}</b><span>${alert.text}</span></div><button type="button" onclick="showView('${alert.view}')">${alert.action}</button></div>`).join("");
+    { tone: "red", title: `${outStock.length} productos sin stock`, text: "Productos agotados.", action: "Ver en inventario", type: "out" },
+    { tone: "amber", title: `${lowStock.length} productos con stock bajo`, text: "Revisa y reabastece pronto.", action: "Reabastecer", type: "low" },
+    { tone: "blue", title: `${offlineQueue().length} cambios pendientes`, text: "Esperando sincronizacion.", action: "Ver estado", type: "sync" },
+  ].map(alert => `<div class="${alert.tone}"><i></i><div><b>${alert.title}</b><span>${alert.text}</span></div><button type="button" onclick="openDashboardAlert('${alert.type}')">${alert.action}</button></div>`).join("");
 
   const weekKeys = ["Dom", "Lun", "Mar", "Mie", "Jue", "Vie", "Sab"];
   const currentDaily = dashboardDailyPoints(sales, 7, "sales");
@@ -1024,7 +1034,9 @@ function renderProducts() {
   const matches = (product, term) => !term || `${product.name} ${product.code} ${product.category} ${product.unit_name} ${product.pack_name}`.toLowerCase().includes(term);
   const visibleProducts = state.products.filter(product => product.active !== false);
   const catalogProducts = filteredProductCatalog(visibleProducts.filter(product => matches(product, catalogTerm)), productMode);
-  const inventoryProducts = visibleProducts.filter(product => matches(product, inventoryTerm));
+  let inventoryProducts = visibleProducts.filter(product => matches(product, inventoryTerm));
+  if (inventoryAlertFilter === "out") inventoryProducts = inventoryProducts.filter(product => Number(product.stock || 0) <= 0);
+  if (inventoryAlertFilter === "low") inventoryProducts = inventoryProducts.filter(product => Number(product.stock || 0) > 0 && Number(product.stock || 0) <= Number(product.min_stock || 0));
   const saleCategories = [...new Set(visibleProducts.map(product => categoryShort(product.category)).filter(Boolean))].sort();
   const saleProducts = visibleProducts
     .filter(product => matches(product, saleTerm))
@@ -1232,6 +1244,20 @@ window.addCart = (productId, mode = "unit") => {
 window.setSaleCategoryFilter = (category) => {
   if ($("saleCategoryFilter")) $("saleCategoryFilter").value = category;
   renderProducts();
+};
+
+window.openDashboardAlert = (type) => {
+  if (type === "sync") {
+    setReportTab("summary");
+    showView("reports");
+    toast(offlineQueue().length ? `${offlineQueue().length} cambio(s) pendientes por sincronizar` : "Todo sincronizado");
+    return;
+  }
+  inventoryAlertFilter = type === "out" ? "out" : type === "low" ? "low" : "all";
+  if ($("inventorySearch")) $("inventorySearch").value = "";
+  showView("stock");
+  renderProducts();
+  document.querySelector(".products-list-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
 };
 
 window.removeCartItem = (id) => {
@@ -1571,6 +1597,7 @@ function showView(name) {
     toast("No tienes permiso para esta seccion");
     name = defaultView();
   }
+  if (name !== "stock") closeProductForm();
   document.querySelectorAll("aside button").forEach(button => button.classList.toggle("active", button.dataset.view === name));
   document.querySelectorAll(".view").forEach(view => view.classList.toggle("active", view.id === `${name}View`));
   $("title").textContent = { dashboard: "Dashboard", sale: "Venta", products: "Productos", stock: "Inventario", ahorrosv: "Zona Digital", users: "Usuarios", reports: "Reportes" }[name];
@@ -1725,6 +1752,7 @@ function fillProductForm(product) {
 function resetProductForm() {
   $("productForm").reset();
   $("productId").value = "";
+  setProductFormMode("new");
   setCategoryValue("", false);
   if ($("minStock")) $("minStock").value = "0";
   if ($("unitName")) $("unitName").value = "unidad";
@@ -1734,6 +1762,36 @@ function resetProductForm() {
   if ($("purchasePackPrice")) $("purchasePackPrice").value = "";
   $("preview").removeAttribute("src");
   $("preview").classList.remove("show");
+}
+
+function setProductFormMode(mode = "new") {
+  const title = document.querySelector(".inventory-form-panel h3");
+  if (title) title.textContent = mode === "edit" ? "Editar producto" : "Agregar nuevo producto";
+}
+
+function isMobileLayout() {
+  return window.matchMedia("(max-width: 760px)").matches;
+}
+
+function openProductForm(focusId = "name") {
+  if (isMobileLayout()) {
+    document.body.classList.add("mobile-product-form-open");
+    setTimeout(() => $(focusId)?.focus({ preventScroll: true }), 180);
+    return;
+  }
+  scrollProductFormIntoView(focusId);
+}
+
+function closeProductForm() {
+  document.body.classList.remove("mobile-product-form-open");
+}
+
+function scrollProductFormIntoView(focusId = "name") {
+  setTimeout(() => {
+    const panel = document.querySelector(".inventory-form-panel");
+    panel?.scrollIntoView({ behavior: "smooth", block: "start" });
+    setTimeout(() => $(focusId)?.focus({ preventScroll: true }), 350);
+  }, 80);
 }
 
 function selectInventoryProduct() {
@@ -1778,12 +1836,7 @@ listen("clearReportFiltersBtn", "click", () => {
 listen("reportProductsLink", "click", () => showView("products"));
 listen("reportInventoryLink", "click", () => showView("stock"));
 document.querySelectorAll("[data-report-tab]").forEach(button => button.addEventListener("click", () => {
-  document.querySelectorAll("[data-report-tab]").forEach(item => item.classList.toggle("active", item === button));
-  const target = button.dataset.reportTab;
-  if (target === "sales") $("reportMetric").value = "sales";
-  if (target === "products") $("reportMetric").value = "units";
-  if (target === "payments") $("reportPaymentFilter").focus();
-  generateReport();
+  setReportTab(button.dataset.reportTab);
 }));
 listen("saleCatalogSearch", "input", renderProducts);
 listen("saleCatalogSearch", "keydown", (event) => {
@@ -1834,7 +1887,10 @@ document.addEventListener("keydown", (event) => {
 });
 listen("catalogSearch", "input", renderProducts);
 listen("productFilter", "change", renderProducts);
-listen("inventorySearch", "input", renderProducts);
+listen("inventorySearch", "input", () => {
+  inventoryAlertFilter = "all";
+  renderProducts();
+});
 listen("usersSearch", "input", () => renderUsers());
 listen("usersRoleFilter", "change", () => renderUsers());
 listen("serviceCompanyFilter", "change", renderServices);
@@ -1846,11 +1902,13 @@ listen("compareProductBtn", "click", () => {
   if (!product) return toast("Selecciona un producto");
   searchAhorro(product.name);
 });
-listen("newProductBtn", "click", resetProductForm);
-listen("catalogNewProductBtn", "click", () => {
+listen("newProductBtn", "click", () => {
+  inventoryAlertFilter = "all";
   resetProductForm();
-  showView("stock");
+  setProductFormMode("new");
+  openProductForm("name");
 });
+listen("closeProductFormBtn", "click", closeProductForm);
 listen("useExpectedBtn", "click", () => {
   const expected = Number(state.cash?.expected_cash || 0) + pendingOfflineCash();
   $("countedCash").value = expected.toFixed(2);
@@ -2024,6 +2082,8 @@ listen("productForm", "submit", async e => {
     const product = await productPayloadFromForm(false);
     await requireOk(await supabase.from("products").upsert(product));
     resetProductForm();
+    setProductFormMode("new");
+    closeProductForm();
     await refresh();
   } catch (err) {
     try {
@@ -2031,6 +2091,8 @@ listen("productForm", "submit", async e => {
       applyLocalProduct(product);
       queueOfflineChange({ type: "product_upsert", product });
       resetProductForm();
+      setProductFormMode("new");
+      closeProductForm();
       toast("Producto guardado offline.");
     } catch (validationErr) {
       toast(validationErr.message || err.message);
@@ -2095,11 +2157,13 @@ window.editProduct = (id) => {
   if (!canManageProducts()) return toast("Solo administrador puede editar productos");
   const product = state.products.find(entry => entry.id === id);
   fillProductForm(product);
+  setProductFormMode("edit");
   if ($("stockProduct")) {
     $("stockProduct").value = product.id;
     renderSelectedStockProduct();
   }
   showView("stock");
+  openProductForm("name");
 };
 
 window.selectCatalogProduct = (id) => {
@@ -2243,6 +2307,16 @@ listen("userForm", "submit", async e => {
   }
 });
 
+function setReportTab(tab = "summary") {
+  activeReportTab = ["summary", "sales", "products", "inventory", "clients", "payments"].includes(tab) ? tab : "summary";
+  document.querySelectorAll("[data-report-tab]").forEach(button => button.classList.toggle("active", button.dataset.reportTab === activeReportTab));
+  if ($("reportMetric")) {
+    if (activeReportTab === "sales") $("reportMetric").value = "sales";
+    if (activeReportTab === "products") $("reportMetric").value = "units";
+  }
+  generateReport();
+}
+
 function reportFilteredSales(range, offset = 0) {
   const cashierId = $("reportCashier")?.value || "all";
   const payment = $("reportPaymentFilter")?.value || "all";
@@ -2284,7 +2358,8 @@ function generateReport() {
   const current = dashboardSummary(sales);
   const previous = dashboardSummary(previousSales);
   const saleIds = new Set(sales.map(sale => sale.id));
-  const topRows = productSummaryForSales(saleIds).slice(0, 5);
+  const soldProductRows = productSummaryForSales(saleIds);
+  const topRows = soldProductRows.slice(0, 5);
   const products = state.products || [];
   const colors = ["#2563eb", "#22c55e", "#6d42d9", "#f59e0b", "#06b6d4"];
   const metric = $("reportMetric")?.value || "sales";
@@ -2348,10 +2423,8 @@ function generateReport() {
   ].map(([label, value, color]) => `<article><i style="color:${color}">▣</i><span>${label}</span><strong>${value}</strong></article>`).join("");
 
   $("salesList").innerHTML = sales.slice(0, 50).map(saleCardHtml).join("") || "<p>Sin ventas</p>";
-  $("reportOutput").innerHTML = `
-    <div class="report-header"><h2>Reporte de ventas</h2><p>Rango: ${range.label}</p></div>
-    <div class="report-summary"><article><span>Tickets</span><strong>${sales.length}</strong></article><article><span>Total vendido</span><strong>${fmt(current.total)}</strong></article><article><span>Productos vendidos</span><strong>${current.units}</strong></article></div>
-    <h3>Productos vendidos</h3><table><thead><tr><th>Producto</th><th>Cantidad</th><th>Monto vendido</th><th>Ganancia</th></tr></thead><tbody>${topRows.map(item => `<tr><td>${item.name}</td><td>${item.units}</td><td>${fmt(item.sold)}</td><td>${fmt(item.profit)}</td></tr>`).join("") || `<tr><td colspan="4">Sin productos vendidos</td></tr>`}</tbody></table>`;
+  $("reportOutput").classList.remove("hidden");
+  $("reportOutput").innerHTML = reportOutputHtml(activeReportTab, { range, sales, current, previous, soldProductRows, paymentRows, categoryRows, products });
 }
 
 function productSummaryForSales(saleIds) {
@@ -2373,6 +2446,106 @@ function productSummaryForSales(saleIds) {
       map.set(item.product_name, row);
     });
   return [...map.values()].sort((a, b) => b.units - a.units);
+}
+
+function reportSaleItems(saleId) {
+  return (state.reports.sale_items || []).filter(item => item.sale_id === saleId);
+}
+
+function reportSummaryCards(current, sales) {
+  return `<div class="report-summary">
+    <article><span>Tickets</span><strong>${sales.length}</strong></article>
+    <article><span>Total vendido</span><strong>${fmt(current.total)}</strong></article>
+    <article><span>Productos vendidos</span><strong>${current.units}</strong></article>
+  </div>`;
+}
+
+function ticketGroupsHtml(sales) {
+  if (!sales.length) return `<p class="empty-state">Sin tickets en este rango.</p>`;
+  return `<div class="ticket-report-list">${sales.map(sale => {
+    const items = reportSaleItems(sale.id);
+    const customer = sale.customer_name || sale.customer || "Sin cliente";
+    const delivery = sale.fulfillment_type || sale.delivery_type || "Sin entrega";
+    return `<section class="ticket-report-block">
+      <div class="ticket-report-head">
+        <div><h4>Ticket ${escapeHtml(sale.ticket || sale.id)}</h4><p>${escapeHtml(localDateTime(sale.created_at))} - ${escapeHtml(profileName(sale.user_id))}</p></div>
+        <div><strong>${fmt(sale.total)}</strong><p>${escapeHtml(sale.payment_method || "Sin pago")} - ${escapeHtml(delivery)}</p></div>
+      </div>
+      <table>
+        <thead><tr><th>Producto</th><th>SKU</th><th>Cantidad</th><th>Precio</th><th>Total</th><th>Ganancia</th></tr></thead>
+        <tbody>${items.map(item => {
+          const units = Number(item.qty || 0) * Number(item.units_per_sale || 1);
+          const unitPrice = Number(item.unit_price || 0);
+          const lineTotal = Number(item.line_total || 0);
+          const profit = lineTotal - Number(item.line_cost || 0);
+          return `<tr><td>${escapeHtml(item.product_name || "Producto")}</td><td>${escapeHtml(item.product_code || "")}</td><td>${units}</td><td>${fmt(unitPrice)}</td><td>${fmt(lineTotal)}</td><td>${fmt(profit)}</td></tr>`;
+        }).join("") || `<tr><td colspan="6">Sin productos registrados en este ticket</td></tr>`}</tbody>
+      </table>
+      <div class="ticket-report-total">
+        <span>Cliente: ${escapeHtml(customer)}</span>
+        <span>Subtotal: ${fmt(sale.subtotal)}</span>
+        <span>Descuento: -${fmt(sale.discount_amount || sale.discount)}</span>
+        <span>IVA: ${fmt(sale.tax)}</span>
+        <strong>Total: ${fmt(sale.total)}</strong>
+      </div>
+    </section>`;
+  }).join("")}</div>`;
+}
+
+function productReportTable(rows) {
+  return `<table><thead><tr><th>Producto</th><th>Cantidad</th><th>Monto vendido</th><th>Ganancia</th></tr></thead><tbody>${
+    rows.map(item => `<tr><td>${escapeHtml(item.name)}</td><td>${item.units}</td><td>${fmt(item.sold)}</td><td>${fmt(item.profit)}</td></tr>`).join("") || `<tr><td colspan="4">Sin productos vendidos</td></tr>`
+  }</tbody></table>`;
+}
+
+function inventoryReportTable(products) {
+  const rows = [...products].sort((a, b) => Number(a.stock || 0) - Number(b.stock || 0));
+  return `<table><thead><tr><th>Producto</th><th>Categoria</th><th>Stock</th><th>Costo</th><th>Precio venta</th><th>Valor costo</th><th>Estado</th></tr></thead><tbody>${
+    rows.map(product => {
+      const status = stockStatus(product);
+      return `<tr><td>${escapeHtml(product.name)}<br><small>SKU: ${escapeHtml(product.code)}</small></td><td>${escapeHtml(categoryShort(product.category))}</td><td>${Number(product.stock || 0)}</td><td>${fmt(product.purchase_price)}</td><td>${fmt(product.sale_price)}</td><td>${fmt(Number(product.purchase_price || 0) * Number(product.stock || 0))}</td><td>${escapeHtml(status.label)}</td></tr>`;
+    }).join("") || `<tr><td colspan="7">Sin productos</td></tr>`
+  }</tbody></table>`;
+}
+
+function clientsReportTable(sales) {
+  const map = new Map();
+  sales.forEach(sale => {
+    const key = sale.customer_name || sale.customer || "Sin cliente";
+    const row = map.get(key) || { name: key, tickets: 0, total: 0 };
+    row.tickets += 1;
+    row.total += Number(sale.total || 0);
+    map.set(key, row);
+  });
+  const rows = [...map.values()].sort((a, b) => b.total - a.total);
+  return `<table><thead><tr><th>Cliente</th><th>Tickets</th><th>Total comprado</th></tr></thead><tbody>${
+    rows.map(row => `<tr><td>${escapeHtml(row.name)}</td><td>${row.tickets}</td><td>${fmt(row.total)}</td></tr>`).join("") || `<tr><td colspan="3">Sin clientes en este rango</td></tr>`
+  }</tbody></table>`;
+}
+
+function paymentsReportTable(paymentRows, total) {
+  return `<table><thead><tr><th>Metodo de pago</th><th>Participacion</th><th>Total</th></tr></thead><tbody>${
+    paymentRows.map(row => `<tr><td>${escapeHtml(row.label)}</td><td>${total ? ((row.value / total) * 100).toFixed(1) : "0.0"}%</td><td>${fmt(row.value)}</td></tr>`).join("") || `<tr><td colspan="3">Sin pagos en este rango</td></tr>`
+  }</tbody></table>`;
+}
+
+function reportOutputHtml(tab, data) {
+  const { range, sales, current, soldProductRows, paymentRows, products } = data;
+  const titleMap = {
+    summary: "Reporte resumen",
+    sales: "Reporte de ventas",
+    products: "Reporte de productos",
+    inventory: "Reporte de inventario",
+    clients: "Reporte de clientes",
+    payments: "Reporte de pagos",
+  };
+  const header = `<div class="report-header"><h2>${titleMap[tab] || titleMap.summary}</h2><p>Rango: ${range.label}</p></div>${reportSummaryCards(current, sales)}`;
+  if (tab === "products") return `${header}<h3>Productos vendidos</h3>${productReportTable(soldProductRows)}<h3>Tickets agrupados</h3>${ticketGroupsHtml(sales)}`;
+  if (tab === "inventory") return `${header}<h3>Inventario actual</h3>${inventoryReportTable(products)}`;
+  if (tab === "clients") return `${header}<h3>Clientes</h3>${clientsReportTable(sales)}<h3>Tickets agrupados</h3>${ticketGroupsHtml(sales)}`;
+  if (tab === "payments") return `${header}<h3>Pagos</h3>${paymentsReportTable(paymentRows, current.total)}<h3>Tickets agrupados</h3>${ticketGroupsHtml(sales)}`;
+  if (tab === "sales") return `${header}<h3>Tickets agrupados</h3>${ticketGroupsHtml(sales)}`;
+  return `${header}<h3>Productos vendidos</h3>${productReportTable(soldProductRows)}<h3>Tickets agrupados</h3>${ticketGroupsHtml(sales)}`;
 }
 
 function printHiddenDocument(title, bodyHtml, styles) {

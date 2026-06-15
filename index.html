@@ -159,6 +159,8 @@
                     <div class="hidden"><span>Costo</span><strong id="cost">$0.00</strong></div>
                   </div>
                   <div class="summary-total"><span>Total</span><strong id="total">$0.00</strong></div>
+                  <button id="checkoutBtn">Procesar venta</button>
+                  <button type="button" class="quote-btn">Guardar como cotizacion</button>
                 </section>
 
                 <section class="sale-panel">
@@ -184,8 +186,6 @@
                     <input id="saleImageFile" type="file" accept="image/jpeg,image/png,image/webp" capture="environment" />
                   </label>
                   <img id="salePreview" class="preview sale-preview" alt="" />
-                  <button id="checkoutBtn">Procesar venta</button>
-                  <button type="button" class="quote-btn">Guardar como cotizacion</button>
                 </section>
               </div>
             </div>
@@ -209,7 +209,6 @@
                   <option value="best_sellers">Mas vendidos</option>
                   <option value="no_image">Sin imagen</option>
                 </select>
-                <button type="button" id="catalogNewProductBtn">+ Nuevo producto</button>
               </div>
             </div>
 
@@ -296,8 +295,11 @@
                 </div>
               </section>
 
-              <aside class="inventory-form-panel">
-                <h3>Agregar nuevo producto</h3>
+              <aside class="inventory-form-panel" id="productFormPanel">
+                <div class="inventory-form-head">
+                  <h3>Agregar nuevo producto</h3>
+                  <button type="button" class="form-close-btn" id="closeProductFormBtn" aria-label="Cerrar formulario">×</button>
+                </div>
                 <form class="product-form" id="productForm">
                   <input type="hidden" id="productId" />
                   <label>Nombre del producto
