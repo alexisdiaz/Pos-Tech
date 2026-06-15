@@ -538,7 +538,7 @@ async function refresh(options = {}) {
   const viewBeforeRefresh = currentView();
   const cached = loadCache();
   try {
-    state.products = await requireOk(await withTimeout(supabase.from("products").select("*").eq("active", true).order("name"), "Productos"));
+    state.products = await requireOk(await withTimeout(supabase.from("products").select("*").order("name"), "Productos"));
   } catch (err) {
     if (!cached) throw err;
     state.products = cached.products || [];
@@ -1036,13 +1036,14 @@ function renderProducts() {
   const saleCategory = $("saleCategoryFilter")?.value || "all";
   const saleStock = $("saleStockFilter")?.value || "all";
   const matches = (product, term) => !term || `${product.name} ${product.code} ${product.category} ${product.unit_name} ${product.pack_name}`.toLowerCase().includes(term);
-  const visibleProducts = state.products.filter(product => product.active !== false);
+  const visibleProducts = state.products || [];
+  const activeSaleProducts = visibleProducts.filter(product => product.active !== false);
   const catalogProducts = filteredProductCatalog(visibleProducts.filter(product => matches(product, catalogTerm)), productMode);
   let inventoryProducts = visibleProducts.filter(product => matches(product, inventoryTerm));
   if (inventoryAlertFilter === "out") inventoryProducts = inventoryProducts.filter(product => Number(product.stock || 0) <= 0);
   if (inventoryAlertFilter === "low") inventoryProducts = inventoryProducts.filter(product => Number(product.stock || 0) > 0 && Number(product.stock || 0) <= Number(product.min_stock || 0));
-  const saleCategories = [...new Set(visibleProducts.map(product => categoryShort(product.category)).filter(Boolean))].sort();
-  const saleProducts = visibleProducts
+  const saleCategories = [...new Set(activeSaleProducts.map(product => categoryShort(product.category)).filter(Boolean))].sort();
+  const saleProducts = activeSaleProducts
     .filter(product => matches(product, saleTerm))
     .filter(product => saleCategory === "all" || categoryShort(product.category) === saleCategory)
     .filter(product => {
@@ -1092,7 +1093,7 @@ function renderProducts() {
       <td>${fmt(product.sale_price)}</td>
       <td><b class="stock-number ${status.cls}">${product.stock}</b></td>
       <td><span class="catalog-status ${product.active === false ? "inactive" : "active"}">${product.active === false ? "Inactivo" : "Activo"}</span></td>
-      <td><button class="catalog-icon-btn" onclick="event.stopPropagation(); selectCatalogProduct('${product.id}')" title="Ver">◉</button> <button class="catalog-icon-btn" onclick="event.stopPropagation(); editProduct('${product.id}')" title="Editar">✎</button> <button class="catalog-icon-btn" onclick="event.stopPropagation(); deleteProduct('${product.id}')" title="Mas">⋮</button></td>
+      <td><button class="catalog-icon-btn" onclick="event.stopPropagation(); editProduct('${product.id}')" title="Editar">✎</button> <button class="catalog-icon-btn ${product.active === false ? "" : "danger"}" onclick="event.stopPropagation(); toggleProductSaleVisibility('${product.id}')" title="${product.active === false ? "Mostrar en venta" : "Ocultar de venta"}">${product.active === false ? "+" : "-"}</button></td>
     </tr>`;
   }).join("") || `<tr><td colspan="7">No se encontraron productos</td></tr>`;
   renderProductDetail();
@@ -1182,8 +1183,7 @@ function renderProductDetail() {
     </div>
     <div class="detail-actions">
       <button type="button" onclick="editProduct('${product.id}')">✎ Editar producto</button>
-      <button type="button" onclick="showView('stock')">▣ Actualizar stock</button>
-      <button type="button" class="danger" onclick="deleteProduct('${product.id}')">⏻ Desactivar producto</button>
+      <button type="button" class="${product.active === false ? "" : "danger"}" onclick="toggleProductSaleVisibility('${product.id}')">${product.active === false ? "+ Mostrar en venta" : "- Ocultar de venta"}</button>
     </div>`;
 }
 
@@ -1443,7 +1443,9 @@ async function syncOfflineSales() {
           await requireOk(await supabase.rpc("close_cash_session", { p_cash_session_id: sessionId, p_counted_cash: sale.counted_cash, p_notes: sale.notes }));
         } else if (sale.type === "product_upsert") {
           await requireOk(await supabase.from("products").upsert(sale.product));
-        } else if (["product_delete", "product_deactivate"].includes(sale.type)) {
+        } else if (sale.type === "product_deactivate") {
+          await requireOk(await supabase.from("products").update({ active: sale.active }).eq("id", sale.product_id));
+        } else if (sale.type === "product_delete") {
           await requireOk(await supabase.from("products").delete().eq("id", sale.product_id));
         } else if (sale.type === "stock_movement") {
           await requireOk(await supabase.from("products").update({ stock: sale.stock_after }).eq("id", sale.product_id));
@@ -1626,6 +1628,7 @@ function readFileAsDataUrl(file, fallbackElementId = "preview") {
 async function productPayloadFromForm(forceLocalImage = false) {
   calculatePurchaseUnitPrice();
   if (!$("category").value) throw new Error("Selecciona una categoria del inventario");
+  const existingProduct = state.products.find(product => product.id === $("productId").value);
   const file = $("imageFile").files[0];
   let image_url = safeImageUrl($("preview").src, "") || null;
   if (file) {
@@ -1647,7 +1650,7 @@ async function productPayloadFromForm(forceLocalImage = false) {
     expiration_date: $("expirationDate").value || null,
     description: $("description")?.value || "",
     image_url,
-    active: true,
+    active: existingProduct?.active ?? true,
   };
 }
 
@@ -2193,6 +2196,25 @@ window.selectCatalogProduct = (id) => {
   openProductDetailPanel();
 };
 
+window.toggleProductSaleVisibility = async (id) => {
+  if (!canManageProducts()) return toast("Solo administrador puede cambiar visibilidad");
+  const product = state.products.find(entry => entry.id === id);
+  if (!product) return toast("Producto no encontrado");
+  const active = product.active === false;
+  product.active = active;
+  saveCache();
+  renderAll();
+  try {
+    if (!isOnline()) throw new Error("offline");
+    await requireOk(await supabase.from("products").update({ active }).eq("id", id));
+    await refresh({ preserveView: true });
+    toast(active ? "Producto visible en Venta" : "Producto oculto de Venta");
+  } catch (err) {
+    queueOfflineChange({ type: "product_deactivate", product_id: id, active });
+    toast(active ? "Producto se mostrara en Venta al sincronizar" : "Producto oculto de Venta localmente");
+  }
+};
+
 window.deleteProduct = async (id) => {
   if (!canManageProducts()) return toast("Solo administrador puede eliminar productos");
   if (!confirm("Eliminar producto definitivamente? Se quitara tambien su referencia del historial.")) return;
@@ -2206,7 +2228,7 @@ window.deleteProduct = async (id) => {
     toast("Producto eliminado");
   } catch (err) {
     const queue = offlineQueue();
-    if (!queue.some(item => ["product_delete", "product_deactivate"].includes(item.type) && item.product_id === id)) {
+    if (!queue.some(item => item.type === "product_delete" && item.product_id === id)) {
       queue.push({ id: crypto.randomUUID(), type: "product_delete", product_id: id, created_at: new Date().toISOString() });
       setOfflineQueue(queue);
     }

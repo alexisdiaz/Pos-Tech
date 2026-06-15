@@ -336,6 +336,7 @@ header small.offline { color: var(--bad); }
 .catalog-status.active { background: #dcfce7; color: #16a34a; }
 .catalog-status.inactive { background: #fee2e2; color: #dc2626; }
 .catalog-icon-btn { width: 34px; min-height: 34px; padding: 0; background: #fff; border: 1px solid var(--line); color: var(--ink); }
+.catalog-icon-btn.danger { color: #dc2626; border-color: #fecaca; }
 .products-foot { display: flex; justify-content: space-between; padding: 14px 18px; border-top: 1px solid var(--line); color: var(--muted); }
 .product-detail-panel { padding-bottom: 12px; }
 .detail-product-head { display: grid; grid-template-columns: 90px 1fr; gap: 14px; padding: 18px; align-items: center; }
