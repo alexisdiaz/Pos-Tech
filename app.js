@@ -1603,6 +1603,7 @@ function showView(name, options = {}) {
     name = defaultView();
   }
   closeProductForm();
+  closeProductDetailPanel();
   document.querySelectorAll("aside button[data-view]").forEach(button => button.classList.toggle("active", button.dataset.view === name));
   document.querySelectorAll(".view").forEach(view => view.classList.toggle("active", view.id === `${name}View`));
   $("title").textContent = { dashboard: "Dashboard", sale: "Venta", products: "Productos", stock: "Inventario", ahorrosv: "Zona Digital", users: "Usuarios", reports: "Reportes" }[name];
@@ -1793,6 +1794,17 @@ function closeProductForm() {
   document.documentElement.classList.remove("mobile-product-form-open");
 }
 
+function openProductDetailPanel() {
+  if (!isMobileLayout()) return;
+  document.body.classList.add("mobile-product-detail-open");
+  document.documentElement.classList.add("mobile-product-detail-open");
+}
+
+function closeProductDetailPanel() {
+  document.body.classList.remove("mobile-product-detail-open");
+  document.documentElement.classList.remove("mobile-product-detail-open");
+}
+
 function scrollProductFormIntoView(focusId = "name") {
   setTimeout(() => {
     const panel = document.querySelector(".inventory-form-panel");
@@ -1916,6 +1928,7 @@ listen("newProductBtn", "click", () => {
   openProductForm("name");
 });
 listen("closeProductFormBtn", "click", closeProductForm);
+listen("closeProductDetailBtn", "click", closeProductDetailPanel);
 listen("useExpectedBtn", "click", () => {
   const expected = Number(state.cash?.expected_cash || 0) + pendingOfflineCash();
   $("countedCash").value = expected.toFixed(2);
@@ -2169,6 +2182,7 @@ window.editProduct = (id) => {
     $("stockProduct").value = product.id;
     renderSelectedStockProduct();
   }
+  closeProductDetailPanel();
   showView("stock");
   openProductForm("name");
 };
@@ -2176,6 +2190,7 @@ window.editProduct = (id) => {
 window.selectCatalogProduct = (id) => {
   state.selectedProductId = id;
   renderProducts();
+  openProductDetailPanel();
 };
 
 window.deleteProduct = async (id) => {
