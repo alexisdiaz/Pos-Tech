@@ -700,8 +700,10 @@ th { color: var(--muted); text-transform: uppercase; font-size: .76rem; }
     overflow-y: auto;
     box-shadow: none;
   }
+  html.mobile-product-form-open,
   body.mobile-product-form-open { overflow: hidden; }
   body.mobile-product-form-open .inventory-form-panel { display: block; }
+  .inventory-form-panel { -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
   .inventory-form-head {
     position: sticky;
     top: -18px;

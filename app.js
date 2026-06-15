@@ -534,7 +534,8 @@ async function bootstrap() {
   });
 }
 
-async function refresh() {
+async function refresh(options = {}) {
+  const viewBeforeRefresh = currentView();
   const cached = loadCache();
   try {
     state.products = await requireOk(await withTimeout(supabase.from("products").select("*").eq("active", true).order("name"), "Productos"));
@@ -563,6 +564,9 @@ async function refresh() {
   }
   saveCache();
   renderAll();
+  if (options.preserveView && canUseView(viewBeforeRefresh)) {
+    showView(viewBeforeRefresh, { silent: true });
+  }
   renderSyncStatus();
 }
 
@@ -798,7 +802,7 @@ function applyRolePermissions() {
   document.querySelectorAll("aside button[data-view]").forEach((button) => {
     button.hidden = !canUseView(button.dataset.view);
   });
-  if (!canUseView(currentView())) showView(defaultView());
+  if (!canUseView(currentView())) showView(defaultView(), { silent: true });
 }
 
 function dateKey(date) {
@@ -1592,13 +1596,14 @@ function renderReports() {
   if (!$("reportOutput").innerHTML.trim()) generateReport();
 }
 
-function showView(name) {
+function showView(name, options = {}) {
+  if (!name) return;
   if (!canUseView(name)) {
-    toast("No tienes permiso para esta seccion");
+    if (!options.silent) toast("No tienes permiso para esta seccion");
     name = defaultView();
   }
-  if (name !== "stock") closeProductForm();
-  document.querySelectorAll("aside button").forEach(button => button.classList.toggle("active", button.dataset.view === name));
+  closeProductForm();
+  document.querySelectorAll("aside button[data-view]").forEach(button => button.classList.toggle("active", button.dataset.view === name));
   document.querySelectorAll(".view").forEach(view => view.classList.toggle("active", view.id === `${name}View`));
   $("title").textContent = { dashboard: "Dashboard", sale: "Venta", products: "Productos", stock: "Inventario", ahorrosv: "Zona Digital", users: "Usuarios", reports: "Reportes" }[name];
 }
@@ -1776,6 +1781,7 @@ function isMobileLayout() {
 function openProductForm(focusId = "name") {
   if (isMobileLayout()) {
     document.body.classList.add("mobile-product-form-open");
+    document.documentElement.classList.add("mobile-product-form-open");
     setTimeout(() => $(focusId)?.focus({ preventScroll: true }), 180);
     return;
   }
@@ -1784,6 +1790,7 @@ function openProductForm(focusId = "name") {
 
 function closeProductForm() {
   document.body.classList.remove("mobile-product-form-open");
+  document.documentElement.classList.remove("mobile-product-form-open");
 }
 
 function scrollProductFormIntoView(focusId = "name") {
@@ -1811,7 +1818,7 @@ listen("loginForm", "submit", async (e) => {
 });
 
 listen("logoutBtn", "click", async () => { await teardownRealtime(); await supabase.auth.signOut(); location.reload(); });
-document.querySelectorAll("aside button").forEach(button => button.addEventListener("click", () => showView(button.dataset.view)));
+document.querySelectorAll("aside button[data-view]").forEach(button => button.addEventListener("click", () => showView(button.dataset.view)));
 
 listen("payment", "input", renderCart);
 listen("dashboardStartDate", "change", renderDashboard);
@@ -2084,7 +2091,7 @@ listen("productForm", "submit", async e => {
     resetProductForm();
     setProductFormMode("new");
     closeProductForm();
-    await refresh();
+    await refresh({ preserveView: true });
   } catch (err) {
     try {
       const product = await productPayloadFromForm(true);
