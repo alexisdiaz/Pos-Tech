@@ -110,10 +110,6 @@
                 <h2>Venta</h2>
                 <p>Realiza ventas, agrega productos y procesa pagos.</p>
               </div>
-              <div class="sale-top-search">
-                <input id="scanInput" placeholder="Buscar productos (SKU, nombre, codigo)..." />
-                <button id="scanBtn" title="Agregar por codigo">▥</button>
-              </div>
             </div>
 
             <div class="sale-layout">
@@ -144,15 +140,11 @@
                   <button type="button" class="danger-outline" id="clearCartBtn">Vaciar carrito</button>
                 </section>
 
-                <section class="sale-bottom-grid">
-                  <div class="sale-panel">
-                    <h3>Venta reciente</h3>
-                    <div class="recent-sales-mini" id="recentSalesMini"></div>
-                  </div>
-                  <div class="sale-panel">
-                    <h3>Acciones rapidas</h3>
-                    <button type="button" class="quick-sale-btn">Aplicar descuento <span>F2</span></button>
-                    <button type="button" class="quick-sale-btn">Agregar cliente <span>F3</span></button>
+                <section class="sale-panel sale-quick-panel">
+                  <h3>Acciones rapidas</h3>
+                  <div class="sale-quick-actions">
+                    <button type="button" class="quick-sale-btn" id="applyDiscountBtn">Aplicar descuento <span>F2</span></button>
+                    <button type="button" class="quick-sale-btn" id="addClientBtn">Agregar cliente <span>F3</span></button>
                   </div>
                 </section>
               </div>
@@ -162,6 +154,7 @@
                   <h3>Resumen de venta</h3>
                   <div class="summary-lines">
                     <div><span>Subtotal</span><strong id="subtotal">$0.00</strong></div>
+                    <div><span>Descuento</span><strong id="discountTotal">$0.00</strong></div>
                     <div><span>Impuestos (13%)</span><strong id="tax">$0.00</strong></div>
                     <div class="hidden"><span>Costo</span><strong id="cost">$0.00</strong></div>
                   </div>
@@ -171,6 +164,9 @@
                 <section class="sale-panel">
                   <h3>Metodo de pago</h3>
                   <select id="paymentMethod"><option>Efectivo</option><option>Tarjeta</option><option>Transferencia</option></select>
+                  <label>Tipo de entrega
+                    <select id="saleFulfillment"><option>Contraentrega</option><option>Delivery</option></select>
+                  </label>
                   <label>Pagado con
                     <input id="payment" type="number" min="0" step="0.01" placeholder="0.00" />
                   </label>

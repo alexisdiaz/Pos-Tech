@@ -106,9 +106,10 @@ let state = {
   cash: null,
   profiles: [],
   closures: [],
-  reports: { summary: { tickets: 0, sold: 0, profit: 0 }, sales: [], top_products: [], low_stock: [] },
+  reports: { summary: { tickets: 0, sold: 0, profit: 0 }, sales: [], sale_items: [], top_products: [], low_stock: [] },
   cart: [],
   selectedProductId: null,
+  saleDiscount: 0,
 };
 
 const emailForUsername = (username) => username.includes("@") ? username.toLowerCase() : `${username.toLowerCase()}@pos.local`;
@@ -120,7 +121,7 @@ const normalizeRole = (role) => {
   if (value.includes("super")) return "Supervisor";
   return role || "Colaborador";
 };
-const userRole = () => normalizeRole(state.user?.role);
+const userRole = () => normalizeRole(state.user?.role || state.user?.username || state.user?.name);
 const isAdmin = () => userRole() === "Administrador";
 const allowedViews = () => ROLE_VIEWS[userRole()] || ["sale", "products"];
 const canUseView = (name) => allowedViews().includes(name);
@@ -196,7 +197,7 @@ function applyCachedState(cached) {
   state.user = cached.user;
   state.products = cached.products || [];
   state.profiles = cached.profiles || [state.user];
-  state.reports = cached.reports || state.reports;
+  state.reports = { ...state.reports, ...(cached.reports || {}), sale_items: cached.reports?.sale_items || [] };
   return true;
 }
 
@@ -344,8 +345,10 @@ function cartUnits(productId) {
 function totals() {
   const subtotal = state.cart.reduce((sum, item) => sum + item.unit_price * item.qty, 0);
   const cost = state.cart.reduce((sum, item) => sum + item.unit_cost * item.qty, 0);
-  const tax = subtotal * 0.13;
-  return { subtotal, tax, cost, total: subtotal + tax, profit: subtotal - cost };
+  const discount = Math.min(Math.max(0, Number(state.saleDiscount || 0)), subtotal);
+  const taxable = Math.max(0, subtotal - discount);
+  const tax = taxable * 0.13;
+  return { subtotal, discount, taxable, tax, cost, total: taxable + tax, profit: taxable - cost };
 }
 
 function localDate(value) {
@@ -389,7 +392,7 @@ function productRowHtml(product) {
 }
 
 function productSoldUnits(productId) {
-  return state.reports.sale_items
+  return (state.reports.sale_items || [])
     .filter(item => item.product_id === productId)
     .reduce((sum, item) => sum + item.qty * item.units_per_sale, 0);
 }
@@ -827,7 +830,7 @@ function salesInRange(range, offset = 0) {
 
 function dashboardSummary(sales) {
   const ids = new Set(sales.map(sale => sale.id));
-  const items = state.reports.sale_items.filter(item => ids.has(item.sale_id));
+  const items = (state.reports.sale_items || []).filter(item => ids.has(item.sale_id));
   const total = sales.reduce((sum, sale) => sum + Number(sale.total || 0), 0);
   const units = items.reduce((sum, item) => sum + Number(item.qty || 0) * Number(item.units_per_sale || 1), 0);
   return { total, tickets: sales.length, units, average: sales.length ? total / sales.length : 0, items };
@@ -891,7 +894,7 @@ function dashboardDailyPoints(sales, days, metric) {
   const map = new Map(keys.map(key => [key, { key, value: 0 }]));
   const saleIds = new Set(sales.map(sale => sale.id));
   const unitsBySale = new Map();
-  state.reports.sale_items.filter(item => saleIds.has(item.sale_id)).forEach(item => {
+  (state.reports.sale_items || []).filter(item => saleIds.has(item.sale_id)).forEach(item => {
     unitsBySale.set(item.sale_id, (unitsBySale.get(item.sale_id) || 0) + Number(item.qty || 0) * Number(item.units_per_sale || 1));
   });
   sales.forEach(sale => {
@@ -1324,6 +1327,9 @@ function resetSaleProof() {
 }
 
 function salePayloadFromCart(cartSnapshot, paymentAmount, proofImageUrl = null) {
+  const notes = $("saleNotes")?.value?.trim() || "";
+  const customer = $("saleCustomer")?.value?.trim() || "";
+  const fulfillment = $("saleFulfillment")?.value || "Contraentrega";
   return {
     p_items: cartSnapshot.map(item => item.item_type === "service"
       ? { item_type: "service", service_id: item.service_id, amount: item.unit_price, phone: item.phone, qty: item.qty }
@@ -1331,6 +1337,10 @@ function salePayloadFromCart(cartSnapshot, paymentAmount, proofImageUrl = null) 
     p_payment: paymentAmount,
     p_payment_method: $("paymentMethod").value,
     p_proof_image_url: proofImageUrl,
+    p_discount: Number(state.saleDiscount || 0),
+    p_customer_name: customer || null,
+    p_fulfillment_type: fulfillment,
+    p_notes: notes || null,
   };
 }
 
@@ -1461,10 +1471,18 @@ function renderCart() {
   if ($("cartCount")) $("cartCount").textContent = state.cart.reduce((sum, item) => sum + Number(item.qty || 0), 0);
   const data = totals();
   $("subtotal").textContent = fmt(data.subtotal);
+  if ($("discountTotal")) $("discountTotal").textContent = `-${fmt(data.discount)}`;
   $("tax").textContent = fmt(data.tax);
   $("cost").textContent = fmt(data.cost);
   $("total").textContent = fmt(data.total);
   $("change").textContent = fmt(Math.max(0, Number($("payment").value || 0) - data.total));
+}
+
+function clearSaleMeta() {
+  state.saleDiscount = 0;
+  if ($("saleCustomer")) $("saleCustomer").value = "";
+  if ($("saleNotes")) $("saleNotes").value = "";
+  if ($("saleFulfillment")) $("saleFulfillment").value = "Contraentrega";
 }
 
 function renderRecentSalesMini() {
@@ -1511,7 +1529,7 @@ function renderReportControls() {
 }
 
 function saleItemsFor(saleId) {
-  return state.reports.sale_items
+  return (state.reports.sale_items || [])
     .filter(item => item.sale_id === saleId)
     .map(item => ({
       ...item,
@@ -1768,11 +1786,51 @@ document.querySelectorAll("[data-report-tab]").forEach(button => button.addEvent
   generateReport();
 }));
 listen("saleCatalogSearch", "input", renderProducts);
+listen("saleCatalogSearch", "keydown", (event) => {
+  if (event.key !== "Enter") return;
+  event.preventDefault();
+  const term = $("saleCatalogSearch").value.trim().toLowerCase();
+  const exact = state.products.find(product =>
+    product.code?.toLowerCase() === term || product.name?.toLowerCase() === term
+  );
+  if (!exact) return toast("Producto no encontrado");
+  window.addCart(exact.id, "unit");
+  $("saleCatalogSearch").value = "";
+  renderProducts();
+});
 listen("saleCategoryFilter", "change", renderProducts);
 listen("saleStockFilter", "change", renderProducts);
 listen("clearCartBtn", "click", () => {
   state.cart = [];
+  state.saleDiscount = 0;
   renderCart();
+});
+listen("applyDiscountBtn", "click", () => {
+  const subtotal = totals().subtotal;
+  if (!subtotal) return toast("Agrega productos antes de descontar");
+  const value = prompt("Monto de descuento", Number(state.saleDiscount || 0).toFixed(2));
+  if (value === null) return;
+  const discount = Number(String(value).replace(",", "."));
+  if (Number.isNaN(discount) || discount < 0) return toast("Descuento invalido");
+  state.saleDiscount = Math.min(discount, subtotal);
+  renderCart();
+});
+listen("addClientBtn", "click", () => {
+  const current = $("saleCustomer")?.value || "";
+  const value = prompt("Nombre o telefono del cliente", current);
+  if (value === null) return;
+  $("saleCustomer").value = value.trim();
+  $("saleCustomer").focus();
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "F2") {
+    event.preventDefault();
+    $("applyDiscountBtn")?.click();
+  }
+  if (event.key === "F3") {
+    event.preventDefault();
+    $("addClientBtn")?.click();
+  }
 });
 listen("catalogSearch", "input", renderProducts);
 listen("productFilter", "change", renderProducts);
@@ -1825,6 +1883,7 @@ listen("checkoutBtn", "click", async () => {
     printTicket(result, cartSnapshot, paymentAmount, totalSnapshot);
     state.cart = [];
     $("payment").value = "";
+    clearSaleMeta();
     resetSaleProof();
     if (result.offline) renderAll();
     else await refresh();
@@ -1837,6 +1896,7 @@ listen("checkoutBtn", "click", async () => {
       printTicket(result, cartSnapshot, paymentAmount, totalSnapshot);
       state.cart = [];
       $("payment").value = "";
+      clearSaleMeta();
       resetSaleProof();
       renderAll();
       toast(`Venta guardada offline ${result.ticket}`);
@@ -2191,7 +2251,7 @@ function reportFilteredSales(range, offset = 0) {
   if (cashierId !== "all") sales = sales.filter(sale => sale.user_id === cashierId);
   if (payment !== "all") sales = sales.filter(sale => sale.payment_method === payment);
   if (category !== "all") {
-    const saleIds = new Set(state.reports.sale_items
+    const saleIds = new Set((state.reports.sale_items || [])
       .filter(item => categoryShort(state.products.find(product => product.id === item.product_id)?.category || "Otros") === category)
       .map(item => item.sale_id));
     sales = sales.filter(sale => saleIds.has(sale.id));
@@ -2296,7 +2356,7 @@ function generateReport() {
 
 function productSummaryForSales(saleIds) {
   const map = new Map();
-  state.reports.sale_items
+  (state.reports.sale_items || [])
     .filter(item => saleIds.has(item.sale_id))
     .forEach(item => {
       const product = state.products.find(entry => entry.id === item.product_id);
@@ -2348,18 +2408,23 @@ function printHiddenDocument(title, bodyHtml, styles) {
 
 function printTicket(saleResult, cartSnapshot, paymentAmount, totalSnapshot) {
   const data = totalSnapshot;
+  const customer = $("saleCustomer")?.value?.trim();
+  const fulfillment = $("saleFulfillment")?.value || "Contraentrega";
   const ticketHtml = `
     <div class="ticket">
       <h2>POS SV</h2>
       <p>Ticket: ${saleResult.ticket}</p>
       <p>Fecha: ${localDateTime(new Date())}</p>
       <p>Cajero: ${state.user.name}</p>
+      ${customer ? `<p>Cliente: ${customer}</p>` : ""}
+      <p>Entrega: ${fulfillment}</p>
       <hr>
       ${cartSnapshot.map(item => `
         <p><b>${item.product_name}</b><br>${item.qty} x ${item.label}${item.item_type === "service" ? "" : ` (${item.units_per_sale * item.qty} unidades)`} ${fmt(item.unit_price * item.qty)}</p>
       `).join("")}
       <hr>
       <p>Subtotal: ${fmt(data.subtotal)}</p>
+      <p>Descuento: -${fmt(data.discount)}</p>
       <p>IVA 13%: ${fmt(data.tax)}</p>
       <p><b>Total: ${fmt(data.total)}</b></p>
       <p>Pago: ${fmt(paymentAmount)}</p>

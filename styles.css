@@ -269,6 +269,7 @@ header small.offline { color: var(--bad); }
 .recent-sale-row button { width: 28px; min-height: 28px; padding: 0; background: #fff; color: #334155; }
 .quick-sale-btn { width: 100%; margin-top: 8px; display: flex; justify-content: space-between; align-items: center; background: #fff; border: 1px solid var(--line); color: #0f172a; font-weight: 700; }
 .quick-sale-btn span { color: #475569; font-weight: 500; }
+.sale-quick-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .sale-summary { display: grid; gap: 12px; position: sticky; top: 16px; }
 .summary-lines { display: grid; gap: 13px; padding: 8px 0 14px; border-bottom: 1px solid var(--line); }
 .summary-lines div, .summary-total { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
@@ -557,4 +558,120 @@ th { color: var(--muted); text-transform: uppercase; font-size: .76rem; }
   .sale-panel { padding: 14px; }
   .sale-cart-table { margin: 0 -14px; }
   .sale-hero h2 { font-size: 1.45rem; }
+}
+
+@media(max-width: 760px) {
+  main { padding: 12px; }
+  header { margin-bottom: 12px; }
+  header h1 { font-size: 1.7rem; }
+  aside { grid-template-columns: repeat(3, 1fr); padding: 10px; gap: 8px; }
+  aside button { min-height: 46px; font-size: .92rem; }
+
+  .sale-layout { display: flex; flex-direction: column; }
+  .sale-summary { order: 2; width: 100%; }
+  .sale-main { order: 1; }
+  .sale-tools { gap: 8px; }
+  .sale-category-tabs { padding-bottom: 6px; }
+  .sale-category-tabs button { min-height: 40px; }
+  .sale-product-grid { grid-template-columns: 1fr; }
+  .sale-product { min-height: 104px; grid-template-columns: 74px 1fr; }
+  .sale-product img { width: 74px; height: 58px; }
+  .sale-stock { left: 12px; bottom: 10px; }
+  .sale-quick-actions { grid-template-columns: 1fr; }
+
+  .sale-cart-table table,
+  .sale-cart-table thead,
+  .sale-cart-table tbody,
+  .sale-cart-table tr,
+  .sale-cart-table td {
+    display: block;
+    width: 100%;
+    min-width: 0;
+  }
+  .sale-cart-table table { min-width: 0; }
+  .sale-cart-table thead { display: none; }
+  .sale-cart-table tr { border-bottom: 1px solid var(--line); padding: 12px 14px; }
+  .sale-cart-table td { border: 0; padding: 6px 0; }
+  .sale-cart-table td:nth-child(2)::before { content: "Precio: "; color: var(--muted); }
+  .sale-cart-table td:nth-child(4)::before { content: "Descuento: "; color: var(--muted); }
+  .sale-cart-table td:nth-child(5)::before { content: "Total: "; color: var(--muted); }
+  .sale-cart-table td:last-child { text-align: right; }
+
+  .products-kpis,
+  .inventory-kpis { grid-template-columns: 1fr; gap: 10px; }
+  .products-kpis article,
+  .inventory-kpis article { min-height: 96px; padding: 16px; }
+  .products-workspace,
+  .inventory-workspace { grid-template-columns: 1fr; }
+  .product-detail-panel { order: 2; }
+  .products-list-panel { order: 1; }
+
+  .products-table-wrap,
+  .inventory-table-wrap { overflow: visible; }
+  .products-table,
+  .inventory-table,
+  .products-table tbody,
+  .inventory-table tbody,
+  .products-table tr,
+  .inventory-table tr,
+  .products-table td,
+  .inventory-table td {
+    display: block;
+    width: 100%;
+    min-width: 0;
+  }
+  .products-table,
+  .inventory-table { min-width: 0; }
+  .products-table thead,
+  .inventory-table thead { display: none; }
+  .products-table tr,
+  .inventory-table tr {
+    border-bottom: 1px solid var(--line);
+    padding: 14px;
+  }
+  .products-table td,
+  .inventory-table td {
+    border: 0;
+    padding: 7px 0;
+  }
+  .products-table td:not(:first-child),
+  .inventory-table td:not(:first-child) {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: center;
+  }
+  .products-table td:nth-child(2)::before,
+  .inventory-table td:nth-child(2)::before { content: "Categoria"; color: var(--muted); font-weight: 700; }
+  .products-table td:nth-child(3)::before { content: "Marca"; color: var(--muted); font-weight: 700; }
+  .products-table td:nth-child(4)::before,
+  .inventory-table td:nth-child(3)::before { content: "Precio"; color: var(--muted); font-weight: 700; }
+  .products-table td:nth-child(5)::before,
+  .inventory-table td:nth-child(4)::before { content: "Stock"; color: var(--muted); font-weight: 700; }
+  .products-table td:nth-child(6)::before,
+  .inventory-table td:nth-child(5)::before { content: "Estado"; color: var(--muted); font-weight: 700; }
+  .products-table td:nth-child(7)::before,
+  .inventory-table td:nth-child(6)::before { content: "Acciones"; color: var(--muted); font-weight: 700; }
+  .products-table .table-product,
+  .inventory-table .table-product { min-width: 0; align-items: flex-start; }
+  .products-table .thumb,
+  .inventory-table .thumb { flex: 0 0 auto; }
+  .products-foot,
+  .inventory-foot { flex-direction: column; }
+
+  .detail-product-head { grid-template-columns: 1fr; justify-items: start; }
+  .detail-product-head img { width: 100%; height: auto; max-height: 170px; }
+  .detail-box { margin: 0 14px; }
+  .detail-box p { align-items: flex-start; }
+  .detail-actions button { text-align: center; }
+
+  .inventory-hero { gap: 12px; }
+  .inventory-search { width: 100%; }
+  .inventory-list-head > div { width: 100%; display: grid; grid-template-columns: 1fr; }
+  .inventory-form-panel { padding: 16px; }
+  #stockView .product-form,
+  #stockView .form-pair { grid-template-columns: 1fr; }
+  #stockView .product-form input,
+  #stockView .product-form select,
+  #stockView .product-form textarea { min-width: 0; }
 }
